@@ -1,0 +1,54 @@
+title = "AgnView iOS gitleaks config"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "local-user-path"
+description = "Local Windows or macOS user or drive path"
+regex = '''(?i)(?:\b[A-Z]:\{1,2}Users\{1,2}|\b[C-Z]:\{1,2}[A-Za-z]|/Users/[A-Za-z0-9._-]+/)'''
+keywords = ["users", ":\\", "/users/"]
+
+[[rules]]
+id = "private-ipv4"
+description = "Private-range IPv4 address"
+regex = '''\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})\b'''
+keywords = ["10.", "192.", "172."]
+
+[[rules]]
+id = "non-documentation-ipv4"
+description = "IPv4 address outside 192.0.2.0/24 and 127.0.0.1"
+regex = '''(?:^|[^0-9.\-])(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}(?:/\d{1,2})?(?:[^0-9.]|$)'''
+keywords = ["."]
+[rules.allowlist]
+# SVG path data in the mockup looks like an IPv4 address. The private-ipv4 rule still scans it.
+paths = ['''^mockups/ios-prototype\.html$''']
+regexTarget = "match"
+regexes = ['''^\D?192\.0\.2\.\d{1,3}\D?$''', '''^\D?127\.0\.0\.1\D?$''', '''^\D?0\.0\.0\.0\D?$''', '''^\D?100\.64\.0\.0/10\D?$''']
+
+[[rules]]
+id = "apple-development-team"
+description = "Apple DEVELOPMENT_TEAM assignment with a 10 character team id"
+regex = '''DEVELOPMENT_TEAM\s*[:=]\s*["']?[A-Z0-9]{10}\b'''
+keywords = ["development_team"]
+
+[[rules]]
+id = "pem-private-key"
+description = "PEM private key block"
+regex = '''-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----'''
+keywords = ["private key"]
+
+[[rules]]
+id = "base64-p12-p8-blob"
+description = "Base64 encoded p12 or p8 blob"
+regex = '''(?i)(?:p12|p8|pkcs12|certificate|private_?key)\w*["']?\s*[:=]\s*["']?(?:MII[A-Za-z0-9+/]{100,}={0,2})'''
+keywords = ["mii"]
+
+[[rules]]
+id = "email-address"
+description = "Email address outside the allowed placeholder domains"
+regex = '''[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}'''
+keywords = ["@"]
+[rules.allowlist]
+regexTarget = "match"
+regexes = ['''(?i)@(?:[A-Za-z0-9-]+\.)*(?:example\.com|example\.test|users\.noreply\.github\.com)$''']

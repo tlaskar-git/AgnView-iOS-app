@@ -1,0 +1,31 @@
+#!/bin/sh
+# Pre-commit: gitleaks scan of staged changes plus optional local denylist.
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks is not on PATH. Install it and retry." >&2
+  exit 1
+fi
+
+if gitleaks protect --help >/dev/null 2>&1; then
+  gitleaks protect --staged --redact --no-banner --config .gitleaks.toml || exit 1
+else
+  gitleaks git --staged --redact --no-banner --config .gitleaks.toml || exit 1
+fi
+
+if [ -n "$AGNVIEW_DENYLIST" ] && [ -f "$AGNVIEW_DENYLIST" ]; then
+  fail=0
+  for f in $(git diff --cached --name-only --diff-filter=ACM); do
+    while IFS= read -r term || [ -n "$term" ]; do
+      [ -z "$term" ] && continue
+      hits=$(git show ":$f" 2>/dev/null | grep -a -n -i -F -- "$term" | cut -d: -f1)
+      if [ -n "$hits" ]; then
+        for n in $hits; do
+          echo "pre-commit: denylist match in $f at line $n" >&2
+        done
+        fail=1
+      fi
+    done < "$AGNVIEW_DENYLIST"
+  done
+  [ "$fail" -eq 0 ] || exit 1
+fi
+exit 0

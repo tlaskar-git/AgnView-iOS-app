@@ -1,0 +1,10 @@
+Third-party notices
+
+Inter (assets/fonts/inter-variable.woff2)
+  Font family: Inter. Licence: verify licence (expected SIL Open Font License 1.1).
+
+JetBrains Mono (assets/fonts/jetbrains-mono-variable.woff2)
+  Font family: JetBrains Mono. Licence: verify licence (expected SIL Open Font License 1.1).
+
+Tailwind CSS play script (assets/vendor/tailwind.js)
+  Licensed under the MIT License. Copyright notice: see the upstream Tailwind CSS project.

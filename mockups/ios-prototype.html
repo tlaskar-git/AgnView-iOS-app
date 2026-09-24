@@ -1,0 +1,2328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgnView iOS — iPad Pro & iPhone 16 Interactive Prototype</title>
+  <link rel="icon" type="image/png" href="../assets/favicon.png">
+  <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+  <script src="../assets/vendor/tailwind.js"></script>
+  <script>
+    /* Without darkMode: 'class', Tailwind's dark: utilities follow the OS
+       colour scheme instead of the in-page toggleTheme() button below, so
+       the header, tab bars and badges never actually switched theme. */
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace']
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    /* Self-hosted so this page renders with no internet connection. */
+    @font-face {
+      font-family: 'Inter';
+      font-style: normal;
+      font-weight: 100 900;
+      font-display: swap;
+      src: url('../assets/fonts/inter-variable.woff2') format('woff2');
+    }
+    @font-face {
+      font-family: 'JetBrains Mono';
+      font-style: normal;
+      font-weight: 100 800;
+      font-display: swap;
+      src: url('../assets/fonts/jetbrains-mono-variable.woff2') format('woff2');
+    }
+    :root {
+      --bg-page: #F6F7F9;
+      --bg-surface: #FFFFFF;
+      --bg-raised: #EEF1F5;
+      --border-color: #D8DEE7;
+      --text-main: #18212F;
+      --text-secondary: #526071;
+      --color-action: #1D4ED8;
+      --color-action-hover: #1E40AF;
+      --color-success: #047857; /* WCAG AA: >4.5:1 on light */
+      --color-warning: #92400E; /* WCAG AA: >4.5:1 on light */
+      --color-error: #B91C1C;
+      --link-accent: #1D4ED8;
+    }
+    .dark {
+      --bg-page: #101216;
+      --bg-surface: #191D24;
+      --bg-raised: #242A34;
+      --border-color: #344050;
+      --text-main: #F3F4F6;
+      --text-secondary: #ADB7C6;
+      --color-action: #2563EB;
+      --color-action-hover: #1D4ED8;
+      --color-success: #6EE7B7;
+      --color-warning: #FCD34D;
+      --color-error: #FCA5A5;
+      --link-accent: #93C5FD;
+    }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+      user-select: none;
+    }
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    * {
+      transition: background-color 0.15s ease, border-color 0.15s ease, color 0.1s ease;
+    }
+    ::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(140, 150, 165, 0.3);
+      border-radius: 4px;
+    }
+    .pill-shadow {
+      box-shadow: 0 10px 25px -3px rgba(16, 18, 22, 0.1), 0 4px 10px rgba(16, 18, 22, 0.05);
+    }
+    .dark .pill-shadow {
+      box-shadow: 0 14px 30px -4px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+    .icon-pipelines {
+      display: inline-block;
+      width: 1rem;
+      height: 1rem;
+      background-color: currentColor;
+      -webkit-mask: url("../assets/icons/pipelines-icon.png") no-repeat center / contain;
+      mask: url("../assets/icons/pipelines-icon.png") no-repeat center / contain;
+      flex-shrink: 0;
+    }
+    .icon-pipelines-lg {
+      display: inline-block;
+      width: 1.25rem;
+      height: 1.25rem;
+      background-color: currentColor;
+      -webkit-mask: url("../assets/icons/pipelines-icon.png") no-repeat center / contain;
+      mask: url("../assets/icons/pipelines-icon.png") no-repeat center / contain;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body class="bg-[#F0F2F5] dark:bg-[#0B0D11] text-[#18212F] dark:text-[#F3F4F6] antialiased min-h-screen">
+
+  <!-- ================================================================= -->
+  <!-- NOT-A-REAL-CLIENT BANNER                                          -->
+  <!-- ================================================================= -->
+  <div class="sticky top-0 z-50 bg-amber-500/10 border-b border-amber-500/20 text-[var(--color-warning)] text-center text-xs font-semibold py-1.5 px-5">
+    Design prototype. Not connected to any hub.
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- TOP PROTOTYPE PREVIEW SHELL                                      -->
+  <!-- ================================================================= -->
+  <header id="previewShellHeader" class="bg-white dark:bg-[#151921] border-b border-slate-200 dark:border-slate-800 sticky top-7 z-40 px-5 py-3 flex flex-wrap items-center justify-between shadow-sm">
+    <div class="flex items-center space-x-3">
+      <img src="../assets/agnview-app-icon-dark.png" alt="AgnView" class="w-8 h-8 rounded-xl shadow-md border border-slate-200 dark:border-slate-700 object-cover shrink-0">
+      <div>
+        <h1 class="font-bold text-slate-900 dark:text-slate-100 text-sm tracking-tight flex items-center gap-2">
+          AgnView iOS Companion
+          <span class="text-[10px] font-semibold tracking-wider px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-[#1D4ED8] dark:text-[#93C5FD] border border-blue-200 dark:border-blue-800">Interactive Prototype</span>
+        </h1>
+        <p class="text-xs text-slate-500 dark:text-slate-400">Adaptive Preview: iPad Pro 11" & iPhone 16 Pro</p>
+      </div>
+    </div>
+
+    <!-- Device Switcher Tabs & Theme Control -->
+    <div class="flex items-center gap-3 mt-2 sm:mt-0">
+      <div class="bg-slate-100 dark:bg-slate-800 p-1 rounded-xl flex items-center gap-1 border border-slate-200 dark:border-slate-700 text-xs font-medium">
+        <button id="viewSideBySide" onclick="setViewMode('both')" class="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm flex items-center gap-1.5 transition">
+          <svg class="w-3.5 h-3.5 text-[#1D4ED8] dark:text-[#93C5FD]" fill="currentColor" viewBox="0 0 20 20"><path d="M5 4a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V6a2 2 0 00-2-2H5zm0 2h4v10H5V6zm6 10V6h4v10h-4z"/></svg>
+          Side-by-Side
+        </button>
+        <button id="viewIpadOnly" onclick="setViewMode('ipad')" class="px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 flex items-center gap-1.5 transition">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="18" rx="3"/><circle cx="12" cy="18" r="1" fill="currentColor"/></svg>
+          iPad Pro
+        </button>
+        <button id="viewIphoneOnly" onclick="setViewMode('iphone')" class="px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 flex items-center gap-1.5 transition">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="3"/><circle cx="12" cy="18" r="1" fill="currentColor"/></svg>
+          iPhone 16
+        </button>
+      </div>
+
+      <!-- Theme Switcher -->
+      <button onclick="toggleTheme()" class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 shadow-sm transition">
+        <span id="themeIcon">🌙</span>
+        <span id="themeLabel">Dark Mode</span>
+      </button>
+
+      <!-- Transport Indicator (Tag 23: LAN / Direct / Relay / Offline. Icon and
+           text label together carry the state, never colour alone. Tap cycles
+           through the 4 states - static/mock, this stays a design prototype. -->
+      <button onclick="cycleTransportState()" id="transportIndicator" type="button" class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 shadow-sm transition" title="Transport: LAN (tap to cycle, prototype only)">
+        <span id="transportIcon" class="text-[var(--color-success)] flex items-center"></span>
+        <span id="transportLabel">LAN</span>
+      </button>
+
+      <!-- Preview state (prototype only) -->
+      <label class="px-2.5 py-1.5 rounded-xl border border-dashed border-amber-500/50 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 shadow-sm">
+        <span class="text-[10px] uppercase tracking-wide text-[var(--color-warning)]">Preview state (prototype only)</span>
+        <select id="previewStateSelect" onchange="setPreviewState(this.value)" aria-label="Preview state (prototype only)" class="bg-transparent text-xs font-semibold outline-none">
+          <option value="normal">Normal</option>
+          <option value="offline">Hub offline</option>
+          <option value="auth">Auth failed</option>
+          <option value="revoked">Key revoked</option>
+          <option value="relayonly">Relay only</option>
+        </select>
+      </label>
+
+      <!-- Relay Settings -->
+      <button onclick="openRelaySettingsModal()" title="Relay settings" aria-label="Relay settings" class="w-8 h-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center justify-center shadow-sm transition text-slate-700 dark:text-slate-200">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Device Display Stage -->
+  <main class="max-w-[1680px] mx-auto p-4 md:p-8 flex flex-wrap justify-center items-start gap-8 lg:gap-12 transition-all">
+
+    <!-- ================================================================= -->
+    <!-- 1. IPAD PRO SIMULATOR FRAME                                       -->
+    <!-- ================================================================= -->
+    <div id="ipadFrameContainer" class="flex flex-col items-center">
+      <div class="mb-2 flex items-center justify-between w-full max-w-[900px] px-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+        <span class="flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-[#1D4ED8]"></span>
+          iPad Pro 11" · Split View
+        </span>
+        <span class="mono text-[11px]">2388 × 1668</span>
+      </div>
+
+      <!-- iPad Device Enclosure -->
+      <div class="w-full max-w-[900px] aspect-[4/3] max-h-[660px] bg-slate-950 p-4 rounded-[40px] shadow-2xl ring-1 ring-slate-800 relative flex flex-col">
+        <!-- Front Camera Sensor -->
+        <div class="absolute top-2 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-slate-900 border border-slate-800"></div>
+
+        <!-- iPad Glass Viewport -->
+        <div id="ipadViewport" class="w-full h-full bg-[var(--bg-page)] text-[var(--text-main)] rounded-[28px] overflow-hidden flex flex-col relative">
+
+          <!-- iPad Status Bar -->
+          <div class="h-7 px-6 pt-1 flex items-center justify-between text-[11px] font-medium text-[var(--text-secondary)] select-none z-20">
+            <span>9:41 AM Mon Apr 14</span>
+            <div class="flex items-center space-x-2">
+              <span class="mono">100%</span>
+              <svg class="w-3.5 h-3.5 inline text-emerald-600 dark:text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M17.778 8.222c-4.296-4.296-11.26-4.296-15.556 0A1 1 0 01.808 6.808c5.076-5.077 13.308-5.077 18.384 0a1 1 0 01-1.414 1.414zM14.95 11.05a7 7 0 00-9.9 0 1 1 0 01-1.414-1.414 9 9 0 0112.728 0 1 1 0 01-1.414 1.414zm-2.829 2.828a3 3 0 00-4.242 0 1 1 0 01-1.415-1.414 5 5 0 017.072 0 1 1 0 01-1.415 1.414zM9 17a1 1 0 112 0 1 1 0 01-2 0z" clip-rule="evenodd"/></svg>
+            </div>
+          </div>
+
+          <!-- Full-screen connection state overlay (iPad) -->
+          <div id="ipadStateOverlay" class="hidden absolute inset-x-0 top-7 bottom-0 bg-[var(--bg-page)] z-30 flex items-center justify-center p-8"></div>
+
+          <!-- iPad Main Split View Body -->
+          <div class="flex-1 flex overflow-hidden">
+
+            <!-- SIDEBAR: Navigation -->
+            <aside class="w-56 bg-[var(--bg-surface)] border-r border-[var(--border-color)] p-3.5 flex flex-col justify-between select-none shrink-0" id="ipadSidebar">
+              <div class="space-y-4">
+                <!-- App Header (Matching iPhone layout with v2.4 badge) -->
+                <div class="flex items-center px-2 pt-1">
+                  <div class="flex items-center space-x-2">
+                    <img src="../assets/agnview-icon.png" alt="AgnView" class="w-7 h-7 rounded-lg shadow-sm border border-[var(--border-color)] object-contain p-0.5 shrink-0">
+                    <div class="flex items-center gap-1.5">
+                      <span class="text-[var(--text-main)] flex items-center">
+                        <svg class="h-4.5 w-auto" viewBox="0 0 106 24" fill="currentColor" aria-label="AgnView" role="img">
+                          <text x="0" y="18" font-family="'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="700" font-size="20" letter-spacing="-0.03em">AgnView</text>
+                        </svg>
+                      </span>
+                      <span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[var(--bg-raised)] text-[var(--text-secondary)] border border-[var(--border-color)]">v2.4</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Navigation Links with Standard Vector Icons (Tag 09: Removed Workstations tab) -->
+                <nav class="space-y-1">
+                  <!-- Console -->
+                  <button onclick="switchIpadTab('today')" id="ipadTab-today" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#1D4ED8] text-white shadow-sm transition">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+                    Console
+                  </button>
+
+                  <!-- Sessions -->
+                  <button onclick="switchIpadTab('sessions')" id="ipadTab-sessions" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-main)] transition">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+                    Sessions
+                  </button>
+
+                  <!-- Pipelines -->
+                  <button onclick="switchIpadTab('pipelines')" id="ipadTab-pipelines" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-main)] transition">
+                    <span class="icon-pipelines"></span>
+                    Pipelines
+                  </button>
+
+                  <!-- Usage -->
+                  <button onclick="switchIpadTab('usage')" id="ipadTab-usage" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-main)] transition">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="m4.93 4.93 2.83 2.83"/><path d="M2 12h4"/><path d="m4.93 19.07 2.83-2.83"/><path d="M12 22v-4"/><path d="m19.07 19.07-2.83-2.83"/><path d="M22 12h-4"/><path d="m19.07 4.93-2.83 2.83"/></svg>
+                    Usage
+                  </button>
+
+                  <!-- Settings -->
+                  <button onclick="switchIpadTab('settings')" id="ipadTab-settings" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-main)] transition">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>
+                    Settings
+                  </button>
+                </nav>
+              </div>
+
+              <!-- Workstation Remote Selector Card (iPad Sidebar - Tag 10: Say Switch Machine) -->
+              <div onclick="openMachineSwitcherModal()" class="p-3 rounded-xl bg-[var(--bg-raised)] border border-[var(--border-color)] text-xs cursor-pointer hover:border-slate-400 dark:hover:border-slate-600 transition">
+                <div class="flex items-center justify-between text-[var(--text-secondary)] mb-1 text-[11px] font-medium">
+                  <span class="flex items-center gap-1.5">
+                    <span id="ipadActivePlatformIconSvg" class="w-3.5 h-3.5 inline-block text-[var(--text-main)]"></span>
+                    <span>Active host</span>
+                  </span>
+                  <span class="flex items-center gap-1">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    <span class="font-mono text-[var(--color-success)] font-semibold" id="ipadActiveMachineLatency">4ms</span>
+                  </span>
+                </div>
+                <div class="font-semibold text-[var(--text-main)] truncate text-xs" id="ipadActiveMachineName">Mac Studio M2 Max</div>
+                <div class="text-[var(--text-secondary)] truncate text-[11px] mt-0.5" id="ipadActiveMachineUrl">macOS · LAN</div>
+                <div class="mt-2 pt-2 border-t border-[var(--border-color)] flex items-center justify-between text-[11px] text-[var(--link-accent)] font-medium">
+                  <span>Switch Machine</span>
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></svg>
+                </div>
+              </div>
+            </aside>
+
+            <!-- DETAIL / CONTENT PANE (iPadOS Content) -->
+            <main class="flex-1 overflow-y-auto p-5 relative" id="ipadContentPane">
+              <div id="ipadStateBanner" class="mb-3 empty:hidden"></div>
+
+              <!-- =================== IPAD TAB 1: CONSOLE =================== -->
+              <div id="ipadView-today" class="space-y-3 flex flex-col h-[520px]">
+                <!-- Header with Target Status & Machine -->
+                <div class="flex items-center justify-between shrink-0">
+                  <div>
+                    <h2 class="text-lg font-bold tracking-tight text-[var(--text-main)]">Console Chat</h2>
+                    <p class="text-xs text-[var(--text-secondary)]">Direct conversation with agents on active workstation</p>
+                  </div>
+                  <!-- Agent Selector Pills -->
+                  <div class="flex items-center gap-1.5 bg-[var(--bg-raised)] p-1 rounded-xl border border-[var(--border-color)] text-xs">
+                    <button onclick="setLogFilter('all')" id="logFilter-all" class="flex items-center gap-1 px-2.5 py-1 rounded-lg font-semibold bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs transition">
+                      <span>All Agents</span>
+                    </button>
+                    <button onclick="setLogFilter('claude')" id="logFilter-claude" class="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-main)] font-medium transition" title="Anthropic Claude">
+                      <svg class="w-3 h-3 fill-current shrink-0" viewBox="0 0 24 24"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg>
+                      <span>Claude</span>
+                    </button>
+                    <button onclick="setLogFilter('codex')" id="logFilter-codex" class="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-main)] font-medium transition" title="OpenAI Codex / ChatGPT">
+                      <svg class="w-3 h-3 fill-current shrink-0" viewBox="0 0 24 24"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.5045 4.5045 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.02 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.4097 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.4592a.7948.7948 0 0 0-.3927.6813v6.7225zm1.9067-1.107l2.4578-1.419 2.4578 1.419v2.838l-2.4578 1.419-2.4578-1.419z"/></svg>
+                      <span>Codex</span>
+                    </button>
+                    <button onclick="setLogFilter('agy')" id="logFilter-agy" class="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-main)] font-medium transition" title="Google Gemini AntiGravity">
+                      <svg class="w-3 h-3 fill-current shrink-0" viewBox="0 0 24 24"><path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></svg>
+                      <span>AntiGravity</span>
+                    </button>
+                    <button onclick="setLogFilter('deepseek')" id="logFilter-deepseek" class="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-main)] font-medium transition" title="DeepSeek">
+                      <svg class="w-3 h-3 fill-current shrink-0" viewBox="0 0 24 24"><path d="M23.748 4.651c-.254-.124-.364.113-.512.233-.051.04-.094.09-.137.137-.372.397-.806.657-1.373.626-.829-.046-1.537.214-2.163.848-.133-.782-.575-1.248-1.247-1.548-.352-.155-.708-.311-.955-.65-.172-.24-.219-.509-.305-.774-.055-.16-.11-.323-.293-.35-.2-.031-.278.136-.356.276-.313.572-.434 1.202-.422 1.84.027 1.436.633 2.58 1.838 3.393.137.094.172.187.129.323-.082.28-.18.553-.266.833-.055.179-.137.218-.328.14a5.5 5.5 0 0 1-1.737-1.179c-.857-.828-1.631-1.743-2.597-2.46a12 12 0 0 0-.689-.47c-.985-.957.13-1.743.387-1.836.27-.098.094-.433-.778-.428-.872.003-1.67.295-2.687.685a3 3 0 0 1-.465.136 9.6 9.6 0 0 0-2.883-.101c-1.885.21-3.39 1.1-4.497 2.622C.082 8.776-.231 10.854.152 13.02c.403 2.284 1.568 4.175 3.36 5.653 1.857 1.533 3.997 2.284 6.438 2.14 1.482-.085 3.132-.284 4.994-1.86.47.234.962.328 1.78.398.629.058 1.235-.031 1.705-.129.735-.155.684-.836.418-.961-2.155-1.004-1.682-.595-2.112-.926 1.095-1.295 2.768-3.598 3.284-6.733.05-.346.115-.834.108-1.114-.004-.171.035-.238.23-.257a4.2 4.2 0 0 0 1.545-.475c1.397-.763 1.96-2.016 2.093-3.517.02-.23-.004-.467-.247-.588M11.58 18.168c-2.088-1.642-3.101-2.183-3.52-2.16-.39.024-.32.472-.234.763.09.288.207.487.371.74.114.167.192.416-.113.603-.673.416-1.842-.14-1.897-.168-1.361-.801-2.5-1.86-3.301-3.306-.775-1.393-1.225-2.888-1.299-4.482-.02-.385.094-.522.477-.592a4.7 4.7 0 0 1 1.53-.038c2.131.311 3.946 1.264 5.467 2.774.868.86 1.525 1.887 2.202 2.89.72 1.066 1.494 2.082 2.48 2.915.348.291.626.513.892.677-.802.09-2.14.109-3.055-.615zm1.001-6.44a.306.306 0 0 1 .415-.287.3.3 0 0 1 .113.074.3.3 0 0 1 .086.214c0 .17-.136.307-.308.307a.303.303 0 0 1-.306-.307m3.11 1.596c-.2.081-.4.151-.591.16a1.25 1.25 0 0 1-.798-.254c-.274-.23-.47-.358-.551-.758a1.7 1.7 0 0 1 .015-.588c.07-.327-.007-.537-.238-.727-.188-.156-.426-.199-.689-.199a.6.6 0 0 1-.254-.078.253.253 0 0 1-.114-.358 1 1 0 0 1 .192-.21c.356-.202.767-.136 1.146.016.352.144.618.408 1.001.782.392.451.462.576.685.915.176.264.336.536.446.848.066.194-.02.353-.25.45"/></svg>
+                      <span>DeepSeek</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Apple-aesthetic Conversational Stream Container -->
+                <div id="ipadLiveLogs" class="flex-1 overflow-y-auto rounded-2xl bg-[var(--bg-page)] border border-[var(--border-color)] p-4 space-y-3.5 custom-scrollbar">
+                  <!-- Conversational speech bubbles rendered dynamically -->
+                </div>
+
+                <!-- Apple-aesthetic Chat Input Composer -->
+                <div class="shrink-0 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-2.5 flex items-center gap-2 shadow-xs">
+                  <input type="text" id="ipadChatInput" placeholder="Message active agents... (Enter to send)" class="flex-1 bg-[var(--bg-raised)] border border-[var(--border-color)] rounded-xl px-3.5 py-2 text-xs text-[var(--text-main)] placeholder-[var(--text-secondary)] font-sans focus:outline-none focus:border-[#1D4ED8]" onkeydown="if(event.key==='Enter') sendMockupIpadMessage();">
+                  <button onclick="sendMockupIpadMessage()" class="w-8 h-8 rounded-xl bg-[#1D4ED8] hover:bg-[#1E40AF] text-white flex items-center justify-center transition shrink-0 shadow-2xs" title="Send message" aria-label="Send message">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                  </button>
+                </div>
+              </div>
+
+              <!-- =================== IPAD TAB 2: PIPELINES =================== -->
+              <div id="ipadView-pipelines" class="hidden space-y-4">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <h2 class="text-lg font-bold tracking-tight text-[var(--text-main)]">Pipelines</h2>
+                    <p class="text-xs text-[var(--text-secondary)]">Multi-task execution graphs and dependencies</p>
+                  </div>
+                  <button onclick="triggerDispatchModal()" class="px-3.5 py-2 rounded-xl bg-[#1D4ED8] hover:bg-[#1E40AF] text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 transition">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                    + New
+                  </button>
+                </div>
+
+                <!-- iPad Pipelines Split View: Left List, Right Wide Inspector -->
+                <div class="grid grid-cols-12 gap-4">
+                  <!-- Left: Pipelines List (5 cols) -->
+                  <div class="col-span-5 space-y-2.5">
+                    <div class="text-xs font-semibold text-[var(--text-secondary)]">Active pipelines</div>
+                    
+                    <div onclick="selectIpadPipeline('job-auth')" id="ipadPipeCard-1" class="p-3.5 rounded-xl bg-[var(--bg-surface)] border-2 border-[#1D4ED8] cursor-pointer space-y-2">
+                      <div class="flex items-center justify-between">
+                        <span class="font-semibold text-xs text-[var(--text-main)]">User Authentication & API</span>
+                        <span class="text-[11px] font-semibold text-blue-600 dark:text-blue-400">1/4 done</span>
+                      </div>
+                      <p class="text-xs text-[var(--text-secondary)]">FastAPI auth, PostgreSQL migration, React integration.</p>
+                      <div class="w-full bg-[var(--bg-raised)] rounded-full h-1.5 overflow-hidden">
+                        <div class="w-1/4 h-full bg-blue-600 dark:bg-blue-400 rounded-full"></div>
+                      </div>
+                    </div>
+
+                    <div onclick="selectIpadPipeline('job-cli-test')" id="ipadPipeCard-2" class="p-3.5 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-color)] hover:border-slate-400 dark:hover:border-slate-600 cursor-pointer space-y-2">
+                      <div class="flex items-center justify-between">
+                        <span class="font-semibold text-xs text-[var(--text-main)]">AgnView Diagnostic Suite</span>
+                        <span class="text-[11px] font-semibold text-[var(--color-success)]">All 3 completed</span>
+                      </div>
+                      <p class="text-xs text-[var(--text-secondary)]">Static typing, SSE stream tests, SQLite recovery audits.</p>
+                      <div class="w-full bg-[var(--bg-raised)] rounded-full h-1.5 overflow-hidden">
+                        <div class="w-full h-full bg-emerald-600 dark:bg-emerald-400 rounded-full"></div>
+                      </div>
+                    </div>
+
+                    <!-- Tasks within the active pipeline (Tag 22: was rendered nowhere on
+                         iPad, so only the first task was ever reachable in the inspector) -->
+                    <div class="text-xs font-semibold text-[var(--text-secondary)] pt-1.5">Tasks in this pipeline</div>
+                    <div id="ipadTaskListContainer" class="space-y-2">
+                      <!-- Rendered dynamically -->
+                    </div>
+                  </div>
+
+                  <!-- Right: Wide Task Inspector (7 cols) -->
+                  <div class="col-span-7 p-4 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-color)] space-y-3.5">
+                    <div class="flex items-start justify-between pb-2.5 border-b border-[var(--border-color)]">
+                      <div>
+                        <div class="text-[11px] font-semibold text-[var(--text-secondary)] uppercase tracking-wider mono" id="ipadInspectorCategory">Task details</div>
+                        <h3 class="font-bold text-sm text-[var(--text-main)]" id="ipadInspectorTitle">API Route Synthesis</h3>
+                      </div>
+                      <span id="ipadInspectorStatusBadge" class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-500/10 text-[var(--color-success)] border border-emerald-500/20">Completed</span>
+                    </div>
+
+                    <p class="text-xs text-[var(--text-secondary)] leading-relaxed" id="ipadInspectorDesc">
+                      Generate FastAPI endpoint telemetry routes and integrate token validation middleware.
+                    </p>
+
+                    <div class="grid grid-cols-2 gap-3 text-xs">
+                      <div class="p-2.5 rounded-lg bg-[var(--bg-raised)]">
+                        <span class="text-[11px] text-[var(--text-secondary)] block">Assigned agent</span>
+                        <span class="font-semibold text-[var(--text-main)]" id="ipadInspectorAgent">Codex</span>
+                      </div>
+                      <div class="p-2.5 rounded-lg bg-[var(--bg-raised)]">
+                        <span class="text-[11px] text-[var(--text-secondary)] block">Prerequisites</span>
+                        <span class="font-semibold text-[var(--text-main)]" id="ipadInspectorPrereqs">None (Root task)</span>
+                      </div>
+                    </div>
+
+                    <div class="space-y-1.5">
+                      <span class="text-xs font-semibold text-[var(--text-secondary)]">Output summary</span>
+                      <div class="p-3 rounded-lg bg-[var(--bg-raised)] mono text-xs text-[var(--text-main)] leading-relaxed" id="ipadInspectorOutput">
+                        Synthesized /api/auth and token validation interceptors. Tests passed 10/10.
+                      </div>
+                    </div>
+
+                    <!-- Action Buttons (Standard 3 types: Primary, Secondary, Destructive) -->
+                    <div class="pt-2 border-t border-[var(--border-color)] flex items-center justify-between">
+                      <button onclick="triggerRevisionSheet(currentSelectedTaskId)" id="ipadInspectorReviseBtn" class="px-3.5 py-2 rounded-xl border border-[var(--border-color)] hover:bg-[var(--bg-raised)] text-xs font-semibold text-[var(--text-main)] transition">
+                        Revise instructions
+                      </button>
+                      <button onclick="markTaskDone(currentSelectedTaskId)" id="ipadInspectorDoneBtn" class="px-4 py-2 rounded-xl bg-[#1D4ED8] hover:bg-[#1E40AF] text-white text-xs font-semibold shadow-sm transition">
+                        Mark completed
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- =================== IPAD TAB 3: USAGE =================== -->
+              <div id="ipadView-usage" class="hidden space-y-4">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <h2 class="text-lg font-bold tracking-tight text-[var(--text-main)]">Usage & Telemetry</h2>
+                    <p class="text-xs text-[var(--text-secondary)]">LLM token consumption and subscription quotas</p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-[11px] text-[var(--text-secondary)]">Last synced: 2m ago</span>
+                    <button onclick="refreshUsageMock()" class="px-3 py-1.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-raised)] text-xs font-semibold text-[var(--text-main)] hover:bg-slate-200 dark:hover:bg-slate-700 transition">
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Wide Provider Rows (Providers the hub reports: Claude, ChatGPT, Gemini) -->
+                <div id="ipadUsageContainer" class="space-y-3">
+                  <!-- Rendered dynamically -->
+                </div>
+              </div>
+
+              <!-- =================== IPAD TAB: SESSIONS =================== -->
+              <div id="ipadView-sessions" class="hidden space-y-4">
+                <div>
+                  <h2 class="text-lg font-bold tracking-tight text-[var(--text-main)]">Sessions</h2>
+                  <p class="text-xs text-[var(--text-secondary)]">Recent agent sessions on this hub</p>
+                </div>
+                <div id="ipadSessionsList" class="space-y-2"></div>
+              </div>
+
+              <!-- =================== IPAD TAB: SETTINGS =================== -->
+              <div id="ipadView-settings" class="hidden space-y-4">
+                <div>
+                  <h2 class="text-lg font-bold tracking-tight text-[var(--text-main)]">Settings</h2>
+                  <p class="text-xs text-[var(--text-secondary)]">Paired machines, connection and appearance</p>
+                </div>
+                <div id="ipadSettingsBody" class="space-y-3"></div>
+              </div>
+
+            </main>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ================================================================= -->
+    <!-- 2. IPHONE 16 PRO SIMULATOR FRAME                                  -->
+    <!-- ================================================================= -->
+    <div id="iphoneFrameContainer" class="flex flex-col items-center">
+      <div class="mb-2 flex items-center justify-between w-full max-w-[390px] px-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+        <span class="flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-[#1D4ED8]"></span>
+          iPhone 16 Pro
+        </span>
+        <span class="mono text-[11px]">393 × 852 pt</span>
+      </div>
+
+      <!-- iPhone Bezel Enclosure -->
+      <div class="w-[380px] h-[780px] bg-slate-950 p-3.5 rounded-[52px] shadow-2xl ring-1 ring-slate-800 relative flex flex-col">
+        <!-- Dynamic Island Pill -->
+        <div class="absolute top-6 left-1/2 -translate-x-1/2 w-28 h-7 bg-black rounded-full z-40 flex items-center justify-between px-2.5">
+          <div class="w-2.5 h-2.5 rounded-full bg-slate-900"></div>
+          <div class="w-2.5 h-2.5 rounded-full bg-blue-950/80 border border-blue-800/40"></div>
+        </div>
+
+        <!-- iPhone Glass Viewport -->
+        <div id="iphoneViewport" class="w-full h-full bg-[var(--bg-page)] text-[var(--text-main)] rounded-[42px] overflow-hidden flex flex-col relative">
+
+          <!-- iPhone Status Bar -->
+          <div class="h-11 px-7 pt-3 flex items-center justify-between text-xs font-semibold text-[var(--text-main)] select-none z-30">
+            <span>9:41</span>
+            <div class="flex items-center space-x-1.5 text-[var(--text-main)]">
+              <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/></svg>
+              <div class="w-5 h-2.5 border border-current rounded-sm p-0.5 flex items-center">
+                <div class="w-full h-full bg-current rounded-[1px]"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- iPhone Native App Top Bar (Tag 21: Exact AgnView wordmark) -->
+          <div class="px-5 py-2 flex items-center justify-between border-b border-[var(--border-color)]/60 bg-[var(--bg-surface)]/80 backdrop-blur-md z-20 shrink-0">
+            <div class="flex items-center gap-2">
+              <img src="../assets/agnview-icon.png" alt="AgnView" class="w-5 h-5 rounded-md shadow-xs object-contain p-0.2">
+              <span class="text-[var(--text-main)] flex items-center">
+                <svg class="h-3.5 w-auto" viewBox="0 0 106 24" fill="currentColor" aria-label="AgnView" role="img">
+                  <text x="0" y="18" font-family="'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="700" font-size="20" letter-spacing="-0.03em">AgnView</text>
+                </svg>
+              </span>
+              <span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[var(--bg-raised)] text-[var(--text-secondary)] border border-[var(--border-color)]">v2.4</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span class="text-[11px] font-medium text-[var(--color-success)]">Live</span>
+            </div>
+          </div>
+
+          <!-- iPhone Scrollable Screen Content Area -->
+          <div class="flex-1 overflow-y-auto px-4 pt-2 pb-24 space-y-3.5" id="iphoneScrollArea">
+            <div id="iphoneStateBanner" class="empty:hidden"></div>
+
+            <!-- =================== IPHONE SCREEN 1: CONSOLE =================== -->
+            <div id="iphoneScreen-today" class="space-y-3 flex flex-col h-[480px]">
+              <!-- Top Bar: Agent & Host Header -->
+              <div class="flex items-center justify-between shrink-0 pt-0.5">
+                <div>
+                  <h2 class="text-base font-bold tracking-tight text-[var(--text-main)]">Agent Chat</h2>
+                  <p class="text-[11px] text-[var(--text-secondary)]">Connected to local CLI runner</p>
+                </div>
+                <div class="flex items-center gap-1">
+                  <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono font-bold">LIVE</span>
+                </div>
+              </div>
+
+              <!-- iOS Agent / Provider Quick Switcher Pills -->
+              <div class="shrink-0 flex items-center gap-1 bg-[var(--bg-raised)] p-1 rounded-xl border border-[var(--border-color)] overflow-x-auto custom-scrollbar">
+                <button onclick="setIphoneAgent('claude')" id="iphoneAgentBtn-claude" class="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#CC6B49] text-white shadow-xs shrink-0 transition" title="Anthropic Claude">
+                  <svg class="w-3 h-3 fill-white shrink-0" viewBox="0 0 24 24"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg>
+                  <span>Claude</span>
+                </button>
+                <button onclick="setIphoneAgent('codex')" id="iphoneAgentBtn-codex" class="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-main)] shrink-0 transition" title="OpenAI Codex / ChatGPT">
+                  <svg class="w-3 h-3 fill-current shrink-0" viewBox="0 0 24 24"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.5045 4.5045 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.02 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.4097 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.4592a.7948.7948 0 0 0-.3927.6813v6.7225zm1.9067-1.107l2.4578-1.419 2.4578 1.419v2.838l-2.4578 1.419-2.4578-1.419z"/></svg>
+                  <span>Codex</span>
+                </button>
+                <button onclick="setIphoneAgent('agy')" id="iphoneAgentBtn-agy" class="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-main)] shrink-0 transition" title="Google Gemini AntiGravity">
+                  <svg class="w-3 h-3 fill-current shrink-0" viewBox="0 0 24 24"><path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></svg>
+                  <span>AntiGravity</span>
+                </button>
+                <button onclick="setIphoneAgent('deepseek')" id="iphoneAgentBtn-deepseek" class="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-main)] shrink-0 transition" title="DeepSeek">
+                  <svg class="w-3 h-3 fill-current shrink-0" viewBox="0 0 24 24"><path d="M23.748 4.651c-.254-.124-.364.113-.512.233-.051.04-.094.09-.137.137-.372.397-.806.657-1.373.626-.829-.046-1.537.214-2.163.848-.133-.782-.575-1.248-1.247-1.548-.352-.155-.708-.311-.955-.65-.172-.24-.219-.509-.305-.774-.055-.16-.11-.323-.293-.35-.2-.031-.278.136-.356.276-.313.572-.434 1.202-.422 1.84.027 1.436.633 2.58 1.838 3.393.137.094.172.187.129.323-.082.28-.18.553-.266.833-.055.179-.137.218-.328.14a5.5 5.5 0 0 1-1.737-1.179c-.857-.828-1.631-1.743-2.597-2.46a12 12 0 0 0-.689-.47c-.985-.957.13-1.743.387-1.836.27-.098.094-.433-.778-.428-.872.003-1.67.295-2.687.685a3 3 0 0 1-.465.136 9.6 9.6 0 0 0-2.883-.101c-1.885.21-3.39 1.1-4.497 2.622C.082 8.776-.231 10.854.152 13.02c.403 2.284 1.568 4.175 3.36 5.653 1.857 1.533 3.997 2.284 6.438 2.14 1.482-.085 3.132-.284 4.994-1.86.47.234.962.328 1.78.398.629.058 1.235-.031 1.705-.129.735-.155.684-.836.418-.961-2.155-1.004-1.682-.595-2.112-.926 1.095-1.295 2.768-3.598 3.284-6.733.05-.346.115-.834.108-1.114-.004-.171.035-.238.23-.257a4.2 4.2 0 0 0 1.545-.475c1.397-.763 1.96-2.016 2.093-3.517.02-.23-.004-.467-.247-.588M11.58 18.168c-2.088-1.642-3.101-2.183-3.52-2.16-.39.024-.32.472-.234.763.09.288.207.487.371.74.114.167.192.416-.113.603-.673.416-1.842-.14-1.897-.168-1.361-.801-2.5-1.86-3.301-3.306-.775-1.393-1.225-2.888-1.299-4.482-.02-.385.094-.522.477-.592a4.7 4.7 0 0 1 1.53-.038c2.131.311 3.946 1.264 5.467 2.774.868.86 1.525 1.887 2.202 2.89.72 1.066 1.494 2.082 2.48 2.915.348.291.626.513.892.677-.802.09-2.14.109-3.055-.615zm1.001-6.44a.306.306 0 0 1 .415-.287.3.3 0 0 1 .113.074.3.3 0 0 1 .086.214c0 .17-.136.307-.308.307a.303.303 0 0 1-.306-.307m3.11 1.596c-.2.081-.4.151-.591.16a1.25 1.25 0 0 1-.798-.254c-.274-.23-.47-.358-.551-.758a1.7 1.7 0 0 1 .015-.588c.07-.327-.007-.537-.238-.727-.188-.156-.426-.199-.689-.199a.6.6 0 0 1-.254-.078.253.253 0 0 1-.114-.358 1 1 0 0 1 .192-.21c.356-.202.767-.136 1.146.016.352.144.618.408 1.001.782.392.451.462.576.685.915.176.264.336.536.446.848.066.194-.02.353-.25.45"/></svg>
+                  <span>DeepSeek</span>
+                </button>
+              </div>
+
+              <!-- Phone Continuous Conversational Bubble Feed -->
+              <div id="iphoneLogsList" class="flex-1 overflow-y-auto rounded-2xl bg-[var(--bg-page)] border border-[var(--border-color)] p-3 space-y-2.5 custom-scrollbar">
+                <!-- Chat speech bubbles rendered dynamically -->
+              </div>
+
+              <!-- iPhone Native Message Composer -->
+              <div class="shrink-0 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl p-1.5 flex items-center gap-1.5 shadow-xs">
+                <!-- Quick Agent indicator badge in input -->
+                <button type="button" onclick="cycleIphoneAgent()" id="iphoneInputAgentBadge" class="px-2 py-1 rounded-lg bg-[#CC6B49] text-white text-[11px] font-semibold flex items-center gap-1 shrink-0 transition" title="Tap to switch agent">
+                  <span id="iphoneInputAgentName">Claude</span>
+                  <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="m19 9-7 7-7-7"/></svg>
+                </button>
+                <input type="text" id="iphoneChatInput" placeholder="Message Claude..." class="flex-1 bg-[var(--bg-raised)] border border-[var(--border-color)] rounded-xl px-3 py-1.5 text-xs text-[var(--text-main)] placeholder-[var(--text-secondary)] font-sans focus:outline-none focus:border-[#1D4ED8]" onkeydown="if(event.key==='Enter') sendMockupIphoneMessage();">
+                <button onclick="sendMockupIphoneMessage()" class="w-7 h-7 rounded-xl bg-[#1D4ED8] hover:bg-[#1E40AF] text-white flex items-center justify-center transition shrink-0" title="Send" aria-label="Send">
+                  <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- =================== IPHONE SCREEN 2: PIPELINES =================== -->
+            <div id="iphoneScreen-pipelines" class="hidden space-y-3">
+              <div class="flex items-center justify-between pt-0.5">
+                <div>
+                  <h2 class="text-lg font-bold tracking-tight text-[var(--text-main)]">Pipelines</h2>
+                  <p class="text-xs text-[var(--text-secondary)]">Tap task to inspect details</p>
+                </div>
+                <button onclick="triggerDispatchModal()" title="+ New" aria-label="+ New" class="px-3 py-1.5 rounded-xl bg-[#1D4ED8] hover:bg-[#1E40AF] text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 transition">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                  + New
+                </button>
+              </div>
+
+              <!-- Pipeline Switcher Pill (Tag 13 & Tag 14: Clear contrast in light mode) -->
+              <div class="flex bg-[var(--bg-raised)] p-1 rounded-xl text-xs font-medium border border-[var(--border-color)]">
+                <button onclick="selectIphonePipeline('job-auth')" id="iphonePipeTab-auth" class="flex-1 py-1.5 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm border border-slate-200/80 dark:border-transparent text-center font-semibold">User Auth (1/4)</button>
+                <button onclick="selectIphonePipeline('job-cli-test')" id="iphonePipeTab-cli" class="flex-1 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 text-center font-medium">Diagnostics (3/3)</button>
+              </div>
+
+              <!-- Pipeline Tasks List -->
+              <div id="iphoneTaskList" class="space-y-2">
+                <!-- Rendered dynamically -->
+              </div>
+            </div>
+
+            <!-- =================== IPHONE SCREEN 3: USAGE =================== -->
+            <div id="iphoneScreen-usage" class="hidden space-y-3">
+              <div class="flex items-center justify-between pt-0.5">
+                <div>
+                  <h2 class="text-lg font-bold tracking-tight text-[var(--text-main)]">Usage</h2>
+                  <p class="text-xs text-[var(--text-secondary)]">Providers this hub reports</p>
+                </div>
+                <button onclick="refreshUsageMock()" class="text-xs text-[var(--link-accent)] font-medium">Refresh</button>
+              </div>
+
+              <!-- Providers from hubProviders, plus empty-state cards for the rest -->
+              <div id="iphoneUsageList" class="space-y-2.5">
+                <!-- Rendered dynamically -->
+              </div>
+            </div>
+
+            <!-- =================== IPHONE SCREEN: SESSIONS =================== -->
+            <div id="iphoneScreen-sessions" class="hidden space-y-3">
+              <div class="pt-0.5">
+                <h2 class="text-lg font-bold tracking-tight text-[var(--text-main)]">Sessions</h2>
+                <p class="text-xs text-[var(--text-secondary)]">Recent agent sessions on this hub</p>
+              </div>
+              <div id="iphoneSessionsList" class="space-y-2"></div>
+            </div>
+
+            <!-- =================== IPHONE SCREEN: SETTINGS =================== -->
+            <div id="iphoneScreen-settings" class="hidden space-y-3">
+              <div class="pt-0.5">
+                <h2 class="text-lg font-bold tracking-tight text-[var(--text-main)]">Settings</h2>
+                <p class="text-xs text-[var(--text-secondary)]">Paired machines, connection and appearance</p>
+              </div>
+              <div id="iphoneSettingsBody" class="space-y-3"></div>
+            </div>
+
+          </div>
+
+          <!-- iPhone 4-Item Floating Bottom Navigation Bar (Tag 12: Call Tab 4 'Machines') -->
+          <div class="absolute bottom-5 left-1/2 -translate-x-1/2 w-[90%] z-40">
+            <div class="h-14 bg-[var(--bg-surface)]/95 backdrop-blur-md rounded-full pill-shadow border border-[var(--border-color)] px-3 flex items-center justify-between">
+              
+              <!-- Tab 1: Console -->
+              <button onclick="switchIphoneTab('today')" id="iphoneTab-today" class="flex flex-col items-center justify-center text-[#1D4ED8] dark:text-[#93C5FD] transition flex-1 min-h-[44px]" aria-label="Console">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+                <span class="text-[10px] font-semibold mt-0.5">Console</span>
+              </button>
+
+              <!-- Tab 2: Sessions -->
+              <button onclick="switchIphoneTab('sessions')" id="iphoneTab-sessions" class="flex flex-col items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-main)] transition flex-1 min-h-[44px]" aria-label="Sessions">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+                <span class="text-[10px] font-medium mt-0.5">Sessions</span>
+              </button>
+
+              <!-- Tab 3: Pipelines -->
+              <button onclick="switchIphoneTab('pipelines')" id="iphoneTab-pipelines" class="flex flex-col items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-main)] transition flex-1 min-h-[44px]" aria-label="Pipelines">
+                <span class="icon-pipelines-lg"></span>
+                <span class="text-[10px] font-medium mt-0.5">Pipelines</span>
+              </button>
+
+              <!-- Tab 3: Usage -->
+              <button onclick="switchIphoneTab('usage')" id="iphoneTab-usage" class="flex flex-col items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-main)] transition flex-1 min-h-[44px]" aria-label="Usage">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="m4.93 4.93 2.83 2.83"/><path d="M2 12h4"/><path d="m4.93 19.07 2.83-2.83"/><path d="M12 22v-4"/><path d="m19.07 19.07-2.83-2.83"/><path d="M22 12h-4"/><path d="m19.07 4.93-2.83 2.83"/></svg>
+                <span class="text-[10px] font-medium mt-0.5">Usage</span>
+              </button>
+
+              <!-- Tab 4: Machines (Tag 12: Renamed from Workstations) -->
+              <button onclick="switchIphoneTab('settings')" id="iphoneTab-settings" class="flex flex-col items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-main)] transition flex-1 min-h-[44px]" aria-label="Settings">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>
+                <span class="text-[10px] font-medium mt-0.5">Settings</span>
+              </button>
+
+            </div>
+          </div>
+
+          <!-- Full-screen connection state overlay (iPhone) -->
+          <div id="iphoneStateOverlay" class="hidden absolute inset-x-0 top-[44px] bottom-0 bg-[var(--bg-page)] z-[45] flex items-center justify-center p-6"></div>
+
+          <!-- Home Indicator Bar -->
+          <div class="absolute bottom-1 left-1/2 -translate-x-1/2 w-32 h-1 bg-slate-400/80 rounded-full z-50"></div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ================================================================= -->
+  <!-- MODAL 1: NEW TASK (DISPATCH) SHEET                                -->
+  <!-- ================================================================= -->
+  <div id="dispatchModal" role="dialog" aria-modal="true" aria-labelledby="dispatchModalTitle" class="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-[var(--bg-surface)] rounded-2xl max-w-md w-full p-5 space-y-4 shadow-xl border border-[var(--border-color)]">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 id="dispatchModalTitle" class="font-bold text-sm text-[var(--text-main)]">New task</h3>
+          <p class="text-xs text-[var(--text-secondary)]" id="dispatchTargetLabel">Target: Mac Studio M2 Max</p>
+        </div>
+        <button onclick="closeDispatchModal()" aria-label="Close dialog" class="w-7 h-7 rounded-lg bg-[var(--bg-raised)] text-[var(--text-secondary)] hover:text-[var(--text-main)] flex items-center justify-center font-bold text-xs">✕</button>
+      </div>
+
+      <div class="space-y-1.5">
+        <label for="modalAgentSelect" class="text-xs font-semibold text-[var(--text-secondary)]">Agent</label>
+        <div class="grid grid-cols-3 gap-1.5 p-1 bg-[var(--bg-raised)] rounded-xl text-xs font-medium">
+          <button onclick="setModalAgent('claude')" id="agentBtn-claude" class="py-1.5 rounded-lg bg-[#1D4ED8] text-white">Claude</button>
+          <button onclick="setModalAgent('codex')" id="agentBtn-codex" class="py-1.5 rounded-lg text-[var(--text-secondary)]">Codex</button>
+          <button onclick="setModalAgent('agy')" id="agentBtn-agy" class="py-1.5 rounded-lg text-[var(--text-secondary)]">AGY</button>
+          <button onclick="setModalAgent('deepseek')" id="agentBtn-deepseek" class="hidden py-1.5 rounded-lg text-[var(--text-secondary)]">DeepSeek</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <div class="space-y-1">
+          <label for="modalModelSelect" class="text-xs font-semibold text-[var(--text-secondary)]">Model</label>
+          <select id="modalModelSelect" class="w-full p-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-raised)] text-[var(--text-main)] text-xs focus:outline-none focus:border-[#1D4ED8] truncate">
+            <option value="">Default Model</option>
+          </select>
+        </div>
+        <div class="space-y-1">
+          <label for="modalEffortSelect" class="text-xs font-semibold text-[var(--text-secondary)]">Reasoning Effort</label>
+          <select id="modalEffortSelect" class="w-full p-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-raised)] text-[var(--text-main)] text-xs focus:outline-none focus:border-[#1D4ED8] truncate">
+            <option value="">Default Effort</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="space-y-1.5">
+        <label for="modalPromptInput" class="text-xs font-semibold text-[var(--text-secondary)]">Instructions</label>
+        <textarea id="modalPromptInput" rows="3" class="w-full p-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-raised)] text-[var(--text-main)] text-xs mono focus:outline-none focus:border-[#1D4ED8]" placeholder="Describe the task for local CLI agent..."></textarea>
+      </div>
+
+      <div class="flex gap-2 pt-1">
+        <button onclick="closeDispatchModal()" class="flex-1 py-2 rounded-xl border border-[var(--border-color)] text-[var(--text-main)] font-semibold text-xs hover:bg-[var(--bg-raised)] transition">Cancel</button>
+        <button onclick="executeDispatch()" id="dispatchSubmitBtn" class="flex-1 py-2 rounded-xl bg-[#1D4ED8] hover:bg-[#1E40AF] text-white font-semibold text-xs shadow-sm transition">Run on Mac Studio</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- MODAL 2: WORKSTATION SWITCHER SHEET                               -->
+  <!-- ================================================================= -->
+  <div id="machineSwitcherModal" role="dialog" aria-modal="true" aria-labelledby="switcherTitle" class="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-[var(--bg-surface)] rounded-2xl max-w-md w-full p-5 space-y-3.5 shadow-xl border border-[var(--border-color)]">
+      <div class="flex items-center justify-between pb-2 border-b border-[var(--border-color)]">
+        <div>
+          <h3 id="switcherTitle" class="font-bold text-sm text-[var(--text-main)]">Switch machine</h3>
+          <p class="text-xs text-[var(--text-secondary)]">Machines stored on this phone</p>
+        </div>
+        <button onclick="closeMachineSwitcherModal()" aria-label="Close dialog" class="w-7 h-7 rounded-lg bg-[var(--bg-raised)] text-[var(--text-secondary)] hover:text-[var(--text-main)] flex items-center justify-center font-bold text-xs">✕</button>
+      </div>
+
+      <div id="switcherRosterList" class="space-y-2 max-h-72 overflow-y-auto pr-1">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <div class="flex gap-2 pt-2 border-t border-[var(--border-color)]">
+        <button onclick="pingAllMachinesSimulated()" class="px-3.5 py-2 rounded-xl bg-[var(--bg-raised)] hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-[var(--text-main)] border border-[var(--border-color)] transition">
+          Ping all
+        </button>
+        <button onclick="closeMachineSwitcherModal(); openAddMachineModal()" class="flex-1 py-2 rounded-xl bg-[#1D4ED8] hover:bg-[#1E40AF] text-white font-semibold text-xs shadow-sm flex items-center justify-center gap-1.5 transition">
+          Add machine
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- MODAL 3: ADD WORKSTATION (Accessible Dialog)                      -->
+  <!-- ================================================================= -->
+  <div id="addMachineModal" role="dialog" aria-modal="true" aria-labelledby="addModalTitle" class="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-[var(--bg-surface)] rounded-2xl max-w-md w-full p-5 space-y-4 shadow-xl border border-[var(--border-color)]">
+      <div class="flex items-center justify-between pb-2 border-b border-[var(--border-color)]">
+        <div>
+          <h3 id="addModalTitle" class="font-bold text-sm text-[var(--text-main)]">Add machine</h3>
+          <p class="text-xs text-[var(--text-secondary)]">Scan the pairing QR code shown in AgnView</p>
+        </div>
+        <button onclick="closeAddMachineModal()" aria-label="Close dialog" class="w-7 h-7 rounded-lg bg-[var(--bg-raised)] text-[var(--text-secondary)] hover:text-[var(--text-main)] flex items-center justify-center font-bold text-xs">✕</button>
+      </div>
+
+      <p class="text-[11px] text-[var(--text-secondary)] bg-[var(--bg-raised)] border border-[var(--border-color)] rounded-xl p-2.5 leading-relaxed">
+        Connections from outside your network use iroh's free public relays, run by a third party. Most connections are direct and never touch a relay. Relayed connections are rate limited and carry no uptime guarantee.
+      </p>
+
+      <!-- Scan flow states are rendered here by renderScanState() -->
+      <div id="scanBody" class="space-y-3"></div>
+
+      <!-- Prototype only: jump between result states -->
+      <div class="flex flex-wrap items-center gap-1.5 pt-2 border-t border-dashed border-[var(--border-color)] text-[10px] text-[var(--text-secondary)]">
+        <span class="font-semibold">Scan result (prototype only):</span>
+        <button onclick="setScanState('camera')" class="px-2 py-1 rounded border border-[var(--border-color)]">Camera</button>
+        <button onclick="setScanState('pairing')" class="px-2 py-1 rounded border border-[var(--border-color)]">Pairing</button>
+        <button onclick="setScanState('success')" class="px-2 py-1 rounded border border-[var(--border-color)]">Success</button>
+        <button onclick="setScanState('invalid')" class="px-2 py-1 rounded border border-[var(--border-color)]">Invalid or expired</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- MODAL: CONFIRM REMOVE / UNPAIR SHEET                              -->
+  <!-- ================================================================= -->
+  <div id="confirmRemoveModal" role="dialog" aria-modal="true" aria-labelledby="confirmRemoveTitle" class="fixed inset-0 bg-black/60 backdrop-blur-xs z-[60] hidden flex items-end sm:items-center justify-center p-4">
+    <div class="bg-[var(--bg-surface)] rounded-t-2xl sm:rounded-2xl max-w-md w-full p-5 space-y-3.5 shadow-2xl border border-[var(--border-color)]">
+      <h3 id="confirmRemoveTitle" class="font-bold text-sm text-[var(--text-main)]">Remove from this phone</h3>
+      <p class="text-xs text-[var(--text-main)] leading-relaxed">This removes the pairing from this phone only. The hub keeps the key valid until you regenerate it in AgnView.</p>
+      <p id="confirmRemoveName" class="text-[11px] text-[var(--text-secondary)]"></p>
+      <div class="flex gap-2 pt-1">
+        <button onclick="closeConfirmRemove()" class="flex-1 min-h-[44px] rounded-xl border border-[var(--border-color)] text-[var(--text-main)] font-semibold text-xs hover:bg-[var(--bg-raised)] transition">Cancel</button>
+        <button onclick="confirmRemoveMachine()" class="flex-1 min-h-[44px] rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold text-xs shadow-sm transition">Remove</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- MODAL 4: MOBILE TASK DETAIL SHEET (Bottom Sheet)                  -->
+  <!-- ================================================================= -->
+  <div id="taskDetailModal" role="dialog" aria-modal="true" aria-labelledby="taskDetailTitle" class="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-[var(--bg-surface)] rounded-t-2xl sm:rounded-2xl max-w-md w-full p-5 space-y-3.5 shadow-2xl border border-[var(--border-color)]">
+      <div class="flex items-start justify-between pb-2 border-b border-[var(--border-color)]">
+        <div>
+          <span id="taskDetailId" class="text-[11px] mono text-[var(--text-secondary)]">task-id</span>
+          <h3 id="taskDetailTitle" class="font-bold text-sm text-[var(--text-main)]">Task title</h3>
+        </div>
+        <button onclick="closeMobileTaskDetail()" aria-label="Close dialog" class="w-7 h-7 rounded-lg bg-[var(--bg-raised)] text-[var(--text-secondary)] hover:text-[var(--text-main)] flex items-center justify-center font-bold text-xs">✕</button>
+      </div>
+
+      <div class="space-y-2 text-xs">
+        <div class="flex justify-between items-center py-1">
+          <span class="text-[var(--text-secondary)]">Status</span>
+          <span id="taskDetailStatusBadge" class="font-semibold px-2 py-0.5 rounded-md text-xs">In progress</span>
+        </div>
+        <div class="flex justify-between items-center py-1 border-t border-[var(--border-color)]">
+          <span class="text-[var(--text-secondary)]">Assigned agent</span>
+          <span id="taskDetailAgent" class="font-semibold text-[var(--text-main)]">Codex</span>
+        </div>
+        <div class="flex justify-between items-center py-1 border-t border-[var(--border-color)]">
+          <span class="text-[var(--text-secondary)]">Prerequisites</span>
+          <span id="taskDetailPrereqs" class="font-mono text-[var(--text-main)]">None</span>
+        </div>
+      </div>
+
+      <div class="space-y-1">
+        <span class="text-xs font-semibold text-[var(--text-secondary)]">Description</span>
+        <p id="taskDetailDesc" class="text-xs text-[var(--text-main)] bg-[var(--bg-raised)] p-2.5 rounded-lg leading-relaxed"></p>
+      </div>
+
+      <div class="space-y-1">
+        <span class="text-xs font-semibold text-[var(--text-secondary)]">Output log</span>
+        <div id="taskDetailOutput" class="text-[11px] mono text-[var(--text-main)] bg-[var(--bg-raised)] p-2.5 rounded-lg max-h-24 overflow-y-auto"></div>
+      </div>
+
+      <div class="flex gap-2 pt-2 border-t border-[var(--border-color)]">
+        <button onclick="closeMobileTaskDetail(); triggerRevisionSheet(currentMobileDetailTaskId)" class="flex-1 py-2 rounded-xl border border-[var(--border-color)] text-[var(--text-main)] font-semibold text-xs hover:bg-[var(--bg-raised)] transition">
+          Revise
+        </button>
+        <button onclick="markTaskDone(currentMobileDetailTaskId); closeMobileTaskDetail()" class="flex-1 py-2 rounded-xl bg-[#1D4ED8] hover:bg-[#1E40AF] text-white font-semibold text-xs shadow-sm transition">
+          Mark done
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- MODAL 5: REVISION FEEDBACK SHEET (Replaces Browser Alert)         -->
+  <!-- ================================================================= -->
+  <div id="revisionModal" role="dialog" aria-modal="true" aria-labelledby="revisionTitle" class="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-[var(--bg-surface)] rounded-2xl max-w-md w-full p-5 space-y-4 shadow-xl border border-[var(--border-color)]">
+      <div class="flex items-center justify-between pb-2 border-b border-[var(--border-color)]">
+        <div>
+          <h3 id="revisionTitle" class="font-bold text-sm text-[var(--text-main)]">Request task revision</h3>
+          <p class="text-xs text-[var(--text-secondary)]" id="revisionSubtitle">Provide feedback to re-queue task</p>
+        </div>
+        <button onclick="closeRevisionSheet()" aria-label="Close dialog" class="w-7 h-7 rounded-lg bg-[var(--bg-raised)] text-[var(--text-secondary)] hover:text-[var(--text-main)] flex items-center justify-center font-bold text-xs">✕</button>
+      </div>
+
+      <div class="space-y-1.5">
+        <label for="revisionFeedbackInput" class="text-xs font-semibold text-[var(--text-secondary)]">Feedback instructions</label>
+        <textarea id="revisionFeedbackInput" rows="3" class="w-full p-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-raised)] text-[var(--text-main)] text-xs mono focus:outline-none focus:border-[#1D4ED8]" placeholder="e.g. Add rate-limiting middleware to auth routes and enforce token expiration..."></textarea>
+      </div>
+
+      <p class="text-[11px] text-[var(--text-secondary)]" id="revisionDispatchTargetNotice">
+        Will dispatch revision to Codex on Mac Studio M2 Max
+      </p>
+
+      <div class="flex gap-2 pt-2 border-t border-[var(--border-color)]">
+        <button onclick="closeRevisionSheet()" class="flex-1 py-2 rounded-xl border border-[var(--border-color)] text-[var(--text-main)] font-semibold text-xs hover:bg-[var(--bg-raised)] transition">Cancel</button>
+        <button onclick="submitRevision()" class="flex-1 py-2 rounded-xl bg-[#1D4ED8] hover:bg-[#1E40AF] text-white font-semibold text-xs shadow-sm transition">Submit revision</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- MODAL 6: RELAY SETTINGS (static/mock - prototype only)            -->
+  <!-- ================================================================= -->
+  <div id="relaySettingsModal" role="dialog" aria-modal="true" aria-labelledby="relaySettingsTitle" class="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-[var(--bg-surface)] rounded-2xl max-w-md w-full p-5 space-y-4 shadow-xl border border-[var(--border-color)]">
+      <div class="flex items-center justify-between pb-2 border-b border-[var(--border-color)]">
+        <div>
+          <h3 id="relaySettingsTitle" class="font-bold text-sm text-[var(--text-main)]">Relay settings</h3>
+          <p class="text-xs text-[var(--text-secondary)]">Choose how AgnView reaches this hub from outside your network</p>
+        </div>
+        <button onclick="closeRelaySettingsModal()" aria-label="Close dialog" class="w-7 h-7 rounded-lg bg-[var(--bg-raised)] text-[var(--text-secondary)] hover:text-[var(--text-main)] flex items-center justify-center font-bold text-xs">✕</button>
+      </div>
+
+      <div class="space-y-1.5">
+        <label for="relayServerInput" class="text-xs font-semibold text-[var(--text-secondary)]">Relay server</label>
+        <input id="relayServerInput" type="text" placeholder="" class="w-full p-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-raised)] text-[var(--text-main)] text-xs mono focus:outline-none focus:border-[#1D4ED8]" />
+        <p class="text-[11px] text-[var(--text-secondary)]">Leave empty to use the free public relays. Paste your own relay URL to route around them.</p>
+      </div>
+
+      <p id="relaySettingsStatus" class="text-[11px] text-[var(--text-secondary)] hidden"></p>
+
+      <div class="flex gap-2 pt-2 border-t border-[var(--border-color)]">
+        <button onclick="testRelayServer()" class="flex-1 py-2 rounded-xl border border-[var(--border-color)] text-[var(--text-main)] font-semibold text-xs hover:bg-[var(--bg-raised)] transition">Test</button>
+        <button onclick="saveRelayServer()" class="flex-1 py-2 rounded-xl bg-[#1D4ED8] hover:bg-[#1E40AF] text-white font-semibold text-xs shadow-sm transition">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- JAVASCRIPT: Reconciled Data & High-Contrast Interactions          -->
+  <!-- ================================================================= -->
+  <script>
+    // State
+    let currentIpadTab = 'today';
+    let currentIphoneTab = 'today';
+    let selectedModalAgent = 'claude';
+    let selectedIphoneAgent = 'claude';
+    let isDarkMode = false;
+    let selectedNewPlatform = 'Linux';
+    let activeMachineId = 'mac-studio';
+    let currentPipelineId = 'job-auth';
+    let currentSelectedTaskId = 'task-auth-1';
+    let currentMobileDetailTaskId = 'task-db-2';
+    let isLogPaused = false;
+    let activeModalTrigger = null;
+
+    // Platform Vector Icons (Clean Lucide SVGs, NO EMOJIS)
+    const platformIcons = {
+      'macOS': `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.62-.75 1.04-1.8 0.92-2.85-.9.04-2 .6-2.65 1.35-.58.67-.99 1.74-.85 2.76 1.01.08 2.05-.51 2.58-1.26z"/></svg>`,
+      'Linux': `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>`,
+      'Windows': `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.951-1.801"/></svg>`,
+      'Cloud': `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>`
+    };
+
+    // Machines stored on this phone (client only). Each pairing came from a QR scan.
+    // route is one of: lan, direct, relay, offline (PAIRING.md rungs). No URL, port or address is stored for display.
+    const ROUTE_LABELS = { lan: 'LAN', direct: 'Direct', relay: 'Relay', offline: 'Offline' };
+    let machines = [
+      { id: 'mac-studio', name: 'Mac Studio', platform: 'macOS', route: 'lan', latency: 4, online: true },
+      { id: 'linux-gpu', name: 'Linux GPU Rig', platform: 'Linux', route: 'direct', latency: 12, online: true },
+      { id: 'win-dev', name: 'Windows Desktop', platform: 'Windows', route: 'lan', latency: 8, online: true },
+      { id: 'cloud-runner', name: 'Cloud Runner', platform: 'Cloud', route: 'relay', latency: 48, online: true }
+    ];
+    let machinePendingRemoveId = null;
+    let previewState = 'normal';
+
+    function getActiveMachine() {
+      return machines.find(m => m.id === activeMachineId) || machines[0];
+    }
+    function machineSubtitle(m) {
+      return `${m.platform} · ${ROUTE_LABELS[m.online ? m.route : 'offline']}`;
+    }
+
+    // Sessions (placeholder data only). Tapping one opens the Console for that session.
+    const sessions = [
+      { id: 's-1', agent: 'claude', prompt: 'Refactor the auth middleware and add tests', time: '9:32', status: 'running' },
+      { id: 's-2', agent: 'codex', prompt: 'Write a migration for the sessions table', time: '9:10', status: 'done' },
+      { id: 's-3', agent: 'agy', prompt: 'Summarise open issues in the tracker', time: 'Yesterday', status: 'done' },
+      { id: 's-4', agent: 'deepseek', prompt: 'Explain the retry logic in the sync worker', time: 'Yesterday', status: 'failed' },
+      { id: 's-5', agent: 'claude', prompt: 'Draft release notes for the next build', time: 'Mon', status: 'done' }
+    ];
+    const SESSION_AGENT_NAMES = { claude: 'Claude', codex: 'Codex', agy: 'AGY', deepseek: 'DeepSeek' };
+
+    // Shared Reconciled Pipeline Dataset
+    const pipelines = [
+      {
+        id: "job-auth",
+        name: "User Authentication & API Service",
+        status: "in_progress",
+        summary: "1/4 done · 2 running · 1 blocked",
+        tasks: [
+          {
+            id: "task-auth-1",
+            title: "API Route Synthesis",
+            agent: "Codex",
+            status: "completed",
+            progress: 100,
+            dependencies: [],
+            description: "Generate FastAPI router endpoints and session token validation middleware.",
+            output: "Synthesized /api/auth and token validation interceptors. Tests passed 10/10."
+          },
+          {
+            id: "task-db-2",
+            title: "Database Provisioning",
+            agent: "AntiGravity",
+            status: "in_progress",
+            progress: 50,
+            dependencies: ["task-auth-1"],
+            description: "Provision PostgreSQL schemas and migrations for multi-user session state.",
+            output: "Running migration 002_user_sessions.sql on port 5432..."
+          },
+          {
+            id: "task-test-3",
+            title: "CLI Diagnostic Suite",
+            agent: "Codex",
+            status: "in_progress",
+            progress: 25,
+            dependencies: ["task-auth-1"],
+            description: "Automated end-to-end accessibility, color contrast, and layout audits.",
+            output: "Executing test suite on local test harness..."
+          },
+          {
+            id: "task-fe-4",
+            title: "Frontend Integration",
+            agent: "Claude Code",
+            status: "blocked",
+            progress: 0,
+            dependencies: ["task-db-2"],
+            blockedBy: "task-db-2",
+            blockedReason: "Waiting for Database Provisioning",
+            description: "Hook reactive stores to live telemetry SSE stream.",
+            output: "Queued. Waiting for database migration schema to complete."
+          }
+        ]
+      },
+      {
+        id: "job-cli-test",
+        name: "AgnView Diagnostic Suite",
+        status: "completed",
+        summary: "All 3 completed",
+        tasks: [
+          {
+            id: "task-diag-1",
+            title: "Syntax & Type Check",
+            agent: "AntiGravity",
+            status: "completed",
+            progress: 100,
+            dependencies: [],
+            description: "Static type analysis with mypy and ruff linting.",
+            output: "0 errors found across 42 files."
+          },
+          {
+            id: "task-diag-2",
+            title: "SSE Stream Verification",
+            agent: "Codex",
+            status: "completed",
+            progress: 100,
+            dependencies: ["task-diag-1"],
+            description: "Verify Server-Sent Events reconnection and heartbeat packets.",
+            output: "Verified 1,000 message burst at 240 req/s without frame drops."
+          },
+          {
+            id: "task-diag-3",
+            title: "Database Persistence Audit",
+            agent: "Claude Code",
+            status: "completed",
+            progress: 100,
+            dependencies: ["task-diag-2"],
+            description: "Verify SQLite write-ahead log flush and crash recovery.",
+            output: "WAL checkpoint verified. Integrity check OK."
+          }
+        ]
+      }
+    ];
+
+    function getActivePipeline() {
+      return pipelines.find(p => p.id === currentPipelineId) || pipelines[0];
+    }
+
+    // Continuous Stream Logs
+    let logEntries = [
+      { id: 'l-1', time: '22:58:14', agent: 'Claude', level: 'INFO', msg: 'Checking task-fe-4 prerequisites: waiting on task-db-2' },
+      { id: 'l-2', time: '22:58:12', agent: 'Codex', level: 'DONE', msg: 'Verified FastAPI router and token authentication middleware' },
+      { id: 'l-3', time: '22:58:08', agent: 'AGY', level: 'INFO', msg: 'Provisioning PostgreSQL tables: user_sessions, refresh_tokens' },
+      { id: 'l-4', time: '22:58:01', agent: 'Codex', level: 'INFO', msg: 'Dispatching CLI test harness suite with 34 test cases' }
+    ];
+
+    // Providers this hub reports on GET /api/usage/accounts (spec enum: claude, chatgpt, gemini).
+    // A provider in usageProviders but missing here renders as "No data from this hub".
+    const hubProviders = ['claude', 'chatgpt', 'gemini'];
+    // Usage catalogue shown by the client. Fields follow UsageAccount: plan_name, tokens_used/limit,
+    // cost_used/limit, requests_count, last_probed. Quota percent and reset are kept from the earlier design.
+    const usageProviders = [
+      {
+        id: 'claude',
+        name: 'Claude Pro Max',
+        plan: '5x Max Quota',
+        reset: 'Resets in 1h 34m',
+        sessionPct: 4,
+        weeklyPct: 1,
+        tokensUsed: 184200, tokensLimit: 5000000, costUsed: 3.42, costLimit: null, requests: 96, lastProbedMin: 1,
+        status: 'Active'
+      },
+      {
+        id: 'chatgpt',
+        name: 'ChatGPT Plus',
+        plan: 'Team Tier',
+        reset: 'Resets in 3h 12m',
+        sessionPct: 1,
+        weeklyPct: 2,
+        tokensUsed: 61800, tokensLimit: null, costUsed: 1.18, costLimit: 20, requests: 41, lastProbedMin: 12,
+        status: 'Active',
+        leftContext: '(99% left)'
+      },
+      {
+        id: 'gemini',
+        name: 'Google Gemini (Antigravity)',
+        plan: 'Google One AI · PRO',
+        reset: 'Dual Model Quota Mesh',
+        isGeminiDesktop: true,
+        tokensUsed: 402500, tokensLimit: 2000000, costUsed: 0, costLimit: null, requests: 58, lastProbedMin: 3,
+        geminiModels: {
+          name: 'Gemini Models',
+          models: '3.8 Flash, 3.7 Flash, 3.6 Flash, 3.1 Pro',
+          weeklyLeft: 52,
+          fiveHourLeft: 9,
+          weeklySub: 'You have used some of your weekly limit',
+          fiveHourSub: 'You have used some of your 5-hour limit'
+        },
+        partnerModels: {
+          name: 'Claude and GPT models',
+          models: 'Sonnet 4.6, Opus 4.6, GPT-OSS 120B',
+          weeklyLeft: 100,
+          fiveHourLeft: 100,
+          weeklySub: 'Full weekly limit available',
+          fiveHourSub: 'Full 5-hour limit available'
+        },
+        status: 'Active'
+      }
+    ];
+
+    // Render Execution Plan & Tasks
+    function renderTasks() {
+      const activePipe = getActivePipeline();
+      const ipadContainer = document.getElementById('ipadTaskListContainer');
+      const iphoneContainer = document.getElementById('iphoneTaskList');
+
+      const renderCard = (t, isIphone = false) => {
+        let statusBadge = '';
+        let borderClass = 'border-[var(--border-color)]';
+        if (t.status === 'completed') {
+          statusBadge = `<span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-500/10 text-[var(--color-success)] border border-emerald-500/20">Completed</span>`;
+        } else if (t.status === 'in_progress') {
+          statusBadge = `<span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">${t.progress}%</span>`;
+        } else if (t.status === 'blocked') {
+          statusBadge = `<span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-500/10 text-[var(--color-warning)] border border-amber-500/30">Blocked</span>`;
+          borderClass = 'border-amber-500/40';
+        }
+
+        const clickHandler = isIphone ? `onclick="openMobileTaskDetail('${t.id}')"` : `onclick="inspectTask('${t.id}')"`;
+
+        return `
+          <div ${clickHandler} class="p-3 rounded-xl bg-[var(--bg-surface)] border ${borderClass} hover:border-slate-400 dark:hover:border-slate-600 cursor-pointer space-y-1.5 transition">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-[var(--text-main)]">${t.title}</span>
+              ${statusBadge}
+            </div>
+            <div class="flex items-center justify-between text-[11px] text-[var(--text-secondary)]">
+              <span>Agent: ${t.agent}</span>
+              ${t.blockedReason ? `<span class="text-[var(--color-warning)] font-medium text-[10px]">${t.blockedReason}</span>` : `<span class="mono">${t.progress}%</span>`}
+            </div>
+            <div class="w-full bg-[var(--bg-raised)] rounded-full h-1 overflow-hidden">
+              <div class="h-full rounded-full ${t.status === 'completed' ? 'bg-emerald-600 dark:bg-emerald-400' : t.status === 'blocked' ? 'bg-amber-500' : 'bg-[#1D4ED8]'}" style="width: ${t.progress}%"></div>
+            </div>
+          </div>
+        `;
+      };
+
+      if (ipadContainer) {
+        ipadContainer.innerHTML = activePipe.tasks.map(t => renderCard(t, false)).join('');
+      }
+      if (iphoneContainer) {
+        iphoneContainer.innerHTML = activePipe.tasks.map(t => renderCard(t, true)).join('');
+      }
+    }
+
+    // Inspect Task in iPad Inspector
+    function inspectTask(taskId) {
+      currentSelectedTaskId = taskId;
+      const pipe = getActivePipeline();
+      const task = pipe.tasks.find(t => t.id === taskId) || pipe.tasks[0];
+
+      document.getElementById('ipadInspectorTitle').innerText = task.title;
+      document.getElementById('ipadInspectorDesc').innerText = task.description;
+      document.getElementById('ipadInspectorAgent').innerText = task.agent;
+      document.getElementById('ipadInspectorOutput').innerText = task.output;
+
+      const badge = document.getElementById('ipadInspectorStatusBadge');
+      const reviseBtn = document.getElementById('ipadInspectorReviseBtn');
+      const doneBtn = document.getElementById('ipadInspectorDoneBtn');
+
+      if (task.status === 'completed') {
+        badge.className = "text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-500/10 text-[var(--color-success)] border border-emerald-500/20";
+        badge.innerText = "Completed (100%)";
+        doneBtn.innerText = "Completed";
+        doneBtn.disabled = true;
+        doneBtn.className = "px-4 py-2 rounded-xl bg-[var(--bg-raised)] text-[var(--text-secondary)] text-xs font-semibold cursor-not-allowed";
+      } else if (task.status === 'in_progress') {
+        badge.className = "text-xs font-semibold px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20";
+        badge.innerText = `In progress (${task.progress}%)`;
+        doneBtn.innerText = "Mark completed";
+        doneBtn.disabled = false;
+        doneBtn.className = "px-4 py-2 rounded-xl bg-[#1D4ED8] hover:bg-[#1E40AF] text-white text-xs font-semibold shadow-sm transition";
+      } else if (task.status === 'blocked') {
+        badge.className = "text-xs font-semibold px-2.5 py-1 rounded-lg bg-amber-500/10 text-[var(--color-warning)] border border-amber-500/30";
+        badge.innerText = `Blocked (${task.blockedReason})`;
+        doneBtn.innerText = "Prerequisites pending";
+        doneBtn.disabled = true;
+        doneBtn.className = "px-4 py-2 rounded-xl bg-[var(--bg-raised)] text-[var(--text-secondary)] text-xs font-semibold cursor-not-allowed";
+      }
+
+      const prereqsText = task.dependencies.length > 0 ? task.dependencies.join(', ') : 'None (Root task)';
+      document.getElementById('ipadInspectorPrereqs').innerText = prereqsText;
+
+      // Switch to Pipelines tab if called from Console jump link
+      if (currentIpadTab !== 'pipelines') {
+        switchIpadTab('pipelines');
+      }
+    }
+
+    // Select Pipeline on iPad
+    function selectIpadPipeline(pipeId) {
+      currentPipelineId = pipeId;
+      const card1 = document.getElementById('ipadPipeCard-1');
+      const card2 = document.getElementById('ipadPipeCard-2');
+
+      if (pipeId === 'job-auth') {
+        card1.className = "p-3.5 rounded-xl bg-[var(--bg-surface)] border-2 border-[#1D4ED8] cursor-pointer space-y-2";
+        card2.className = "p-3.5 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-color)] hover:border-slate-400 dark:hover:border-slate-600 cursor-pointer space-y-2";
+        inspectTask('task-auth-1');
+      } else {
+        card1.className = "p-3.5 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-color)] hover:border-slate-400 dark:hover:border-slate-600 cursor-pointer space-y-2";
+        card2.className = "p-3.5 rounded-xl bg-[var(--bg-surface)] border-2 border-[#1D4ED8] cursor-pointer space-y-2";
+        inspectTask('task-diag-1');
+      }
+      renderTasks();
+    }
+
+    // Select Pipeline on iPhone
+    function selectIphonePipeline(pipeId) {
+      currentPipelineId = pipeId;
+      const tabAuth = document.getElementById('iphonePipeTab-auth');
+      const tabCli = document.getElementById('iphonePipeTab-cli');
+
+      if (pipeId === 'job-auth') {
+        tabAuth.className = "flex-1 py-1.5 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm border border-slate-200/80 dark:border-transparent text-center font-semibold";
+        tabCli.className = "flex-1 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 text-center font-medium";
+      } else {
+        tabAuth.className = "flex-1 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 text-center font-medium";
+        tabCli.className = "flex-1 py-1.5 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm border border-slate-200/80 dark:border-transparent text-center font-semibold";
+      }
+      renderTasks();
+    }
+
+    // Mobile Task Detail Sheet
+    function openMobileTaskDetail(taskId) {
+      currentMobileDetailTaskId = taskId;
+      const pipe = getActivePipeline();
+      const task = pipe.tasks.find(t => t.id === taskId) || pipe.tasks[0];
+
+      document.getElementById('taskDetailId').innerText = task.id;
+      document.getElementById('taskDetailTitle').innerText = task.title;
+      document.getElementById('taskDetailAgent').innerText = task.agent;
+      document.getElementById('taskDetailDesc').innerText = task.description;
+      document.getElementById('taskDetailOutput').innerText = task.output;
+      document.getElementById('taskDetailPrereqs').innerText = task.dependencies.length > 0 ? task.dependencies.join(', ') : 'None';
+
+      const badge = document.getElementById('taskDetailStatusBadge');
+      if (task.status === 'completed') {
+        badge.className = "font-semibold px-2 py-0.5 rounded-md text-xs bg-emerald-500/10 text-[var(--color-success)]";
+        badge.innerText = "Completed";
+      } else if (task.status === 'in_progress') {
+        badge.className = "font-semibold px-2 py-0.5 rounded-md text-xs bg-blue-500/10 text-blue-600 dark:text-blue-400";
+        badge.innerText = `Running (${task.progress}%)`;
+      } else {
+        badge.className = "font-semibold px-2 py-0.5 rounded-md text-xs bg-amber-500/10 text-[var(--color-warning)]";
+        badge.innerText = `Blocked (${task.blockedReason})`;
+      }
+
+      openModal('taskDetailModal');
+    }
+
+    function closeMobileTaskDetail() {
+      closeModal('taskDetailModal');
+    }
+
+    function markTaskDone(taskId) {
+      const pipe = getActivePipeline();
+      const task = pipe.tasks.find(t => t.id === taskId);
+      if (task) {
+        task.status = 'completed';
+        task.progress = 100;
+        renderTasks();
+        if (currentSelectedTaskId === taskId) inspectTask(taskId);
+        appendLog('SYSTEM', 'DONE', `Marked ${task.title} as completed`);
+      }
+    }
+
+    // Circular Progress Ring for Mobile Mockup
+    function renderMockRing(percentRemaining, size = 16) {
+      let strokeColor = "text-emerald-500 dark:text-emerald-400";
+      if (percentRemaining <= 15) {
+        strokeColor = "text-red-500 dark:text-red-400";
+      } else if (percentRemaining <= 40) {
+        strokeColor = "text-amber-500 dark:text-amber-400";
+      }
+      const dash = Math.min(100, Math.max(0, Math.round(percentRemaining)));
+      return `
+        <svg class="-rotate-90 shrink-0" style="width:${size}px; height:${size}px;" viewBox="0 0 36 36" aria-hidden="true">
+          <path class="text-slate-200 dark:text-slate-700" stroke-width="3.5" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+          <path class="${strokeColor}" stroke-dasharray="${dash}, 100" stroke-width="3.5" stroke-linecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+        </svg>
+      `;
+    }
+
+    // Render Usage Rows (Both Devices - Tag 17 & 18: Compact layout so 3 providers show in 1 screen without scrolling)
+    function renderUsage() {
+      const ipadUsage = document.getElementById('ipadUsageContainer');
+      const iphoneUsage = document.getElementById('iphoneUsageList');
+
+      const fmtTok = (n) => n >= 1000000 ? (n / 1000000).toFixed(1) + 'M' : (n >= 1000 ? Math.round(n / 1000) + 'k' : String(n));
+      const usageMeta = (u) => {
+        const tok = u.tokensLimit ? `${fmtTok(u.tokensUsed)} / ${fmtTok(u.tokensLimit)}` : fmtTok(u.tokensUsed);
+        const cost = u.costLimit ? `$${u.costUsed.toFixed(2)} / $${u.costLimit}` : `$${u.costUsed.toFixed(2)}`;
+        const stale = u.lastProbedMin > 10;
+        return `
+          <div class="grid grid-cols-3 gap-1.5 text-[10px]">
+            <div class="px-1.5 py-1 rounded bg-[var(--bg-raised)]"><div class="text-[var(--text-secondary)]">Tokens</div><div class="mono font-semibold text-[var(--text-main)]">${tok}</div></div>
+            <div class="px-1.5 py-1 rounded bg-[var(--bg-raised)]"><div class="text-[var(--text-secondary)]">Cost</div><div class="mono font-semibold text-[var(--text-main)]">${cost}</div></div>
+            <div class="px-1.5 py-1 rounded bg-[var(--bg-raised)]"><div class="text-[var(--text-secondary)]">Requests</div><div class="mono font-semibold text-[var(--text-main)]">${u.requests}</div></div>
+          </div>
+          <div class="text-[10px] ${stale ? 'text-[var(--color-warning)] font-semibold' : 'text-[var(--text-secondary)]'}">${stale ? 'Last reading ' + u.lastProbedMin + ' min ago (stale)' : 'Updated ' + u.lastProbedMin + ' min ago'}</div>
+        `;
+      };
+      const renderEmptyRow = (u) => `
+        <div class="p-2.5 rounded-xl bg-[var(--bg-surface)] border border-dashed border-[var(--border-color)] space-y-1 opacity-60">
+          <div class="flex items-center justify-between text-xs">
+            <span class="font-bold text-[var(--text-main)] text-xs">${u.name}</span>
+            <span class="text-[10px] font-medium text-[var(--text-secondary)]">No data from this hub</span>
+          </div>
+          <div class="text-[10px] text-[var(--text-secondary)]">Appears when the hub reports usage</div>
+        </div>
+      `;
+      const renderRow = (u) => {
+        if (!hubProviders.includes(u.id)) return renderEmptyRow(u);
+        if (u.isGeminiDesktop) {
+          return `
+            <div class="p-2.5 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-color)] space-y-1.5">
+              <div class="flex items-center justify-between text-xs">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-[9px] font-mono px-1 py-0.2 rounded bg-cyan-500/10 text-cyan-500 font-bold">GEMINI</span>
+                  <span class="font-bold text-[var(--text-main)] text-xs">${u.name}</span>
+                </div>
+                <span class="text-[10px] font-medium text-cyan-600 dark:text-cyan-400 bg-cyan-500/10 px-1.5 py-0.2 rounded border border-cyan-500/20">${u.plan}</span>
+              </div>
+
+              <!-- Gemini Models Section -->
+              <div class="p-2 rounded-lg bg-[var(--bg-raised)] border border-[var(--border-color)] space-y-1">
+                <div class="flex items-center justify-between text-[11px]">
+                  <span class="font-bold text-[var(--text-main)] text-[11px]">${u.geminiModels.name}</span>
+                  <span class="text-[9px] text-[var(--text-secondary)] truncate max-w-[140px]">${u.geminiModels.models}</span>
+                </div>
+                <!-- Limits Row inline -->
+                <div class="grid grid-cols-2 gap-2 text-xs pt-0.5">
+                  <div class="flex items-center justify-between py-0.5 px-1 bg-[var(--bg-surface)]/60 rounded">
+                    <span class="text-[10px] text-[var(--text-secondary)]">Weekly</span>
+                    <div class="flex items-center gap-1 font-mono font-bold text-[11px] ${u.geminiModels.weeklyLeft <= 15 ? 'text-red-500' : (u.geminiModels.weeklyLeft <= 40 ? 'text-amber-500' : 'text-emerald-500')}">
+                      <span>${u.geminiModels.weeklyLeft}%</span>
+                      ${renderMockRing(u.geminiModels.weeklyLeft, 13)}
+                    </div>
+                  </div>
+                  <div class="flex items-center justify-between py-0.5 px-1 bg-[var(--bg-surface)]/60 rounded">
+                    <span class="text-[10px] text-[var(--text-secondary)]">5-Hour</span>
+                    <div class="flex items-center gap-1 font-mono font-bold text-[11px] ${u.geminiModels.fiveHourLeft <= 15 ? 'text-red-500' : (u.geminiModels.fiveHourLeft <= 40 ? 'text-amber-500' : 'text-emerald-500')}">
+                      <span>${u.geminiModels.fiveHourLeft}%</span>
+                      ${renderMockRing(u.geminiModels.fiveHourLeft, 13)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Claude and GPT models Section -->
+              <div class="p-2 rounded-lg bg-[var(--bg-raised)] border border-[var(--border-color)] space-y-1">
+                <div class="flex items-center justify-between text-[11px]">
+                  <span class="font-bold text-[var(--text-main)] text-[11px]">${u.partnerModels.name}</span>
+                  <span class="text-[9px] text-[var(--text-secondary)] truncate max-w-[140px]">${u.partnerModels.models}</span>
+                </div>
+                <!-- Limits Row inline -->
+                <div class="grid grid-cols-2 gap-2 text-xs pt-0.5">
+                  <div class="flex items-center justify-between py-0.5 px-1 bg-[var(--bg-surface)]/60 rounded">
+                    <span class="text-[10px] text-[var(--text-secondary)]">Weekly</span>
+                    <div class="flex items-center gap-1 font-mono font-bold text-[11px] text-emerald-500">
+                      <span>${u.partnerModels.weeklyLeft}%</span>
+                      ${renderMockRing(u.partnerModels.weeklyLeft, 13)}
+                    </div>
+                  </div>
+                  <div class="flex items-center justify-between py-0.5 px-1 bg-[var(--bg-surface)]/60 rounded">
+                    <span class="text-[10px] text-[var(--text-secondary)]">5-Hour</span>
+                    <div class="flex items-center gap-1 font-mono font-bold text-[11px] text-emerald-500">
+                      <span>${u.partnerModels.fiveHourLeft}%</span>
+                      ${renderMockRing(u.partnerModels.fiveHourLeft, 13)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              ${usageMeta(u)}
+            </div>
+          `;
+        }
+
+        return `
+          <div class="p-2.5 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-color)] space-y-1.5">
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-bold text-[var(--text-main)] text-xs">${u.name}</span>
+              <span class="text-[10px] font-medium text-[var(--text-secondary)]">${u.reset}</span>
+            </div>
+            <div class="space-y-1">
+              <div class="flex justify-between text-[11px]">
+                <span class="text-[var(--text-secondary)]">Current session</span>
+                <span class="font-semibold text-[var(--color-success)] mono text-[11px]">${u.sessionPct}% used ${u.leftContext || ''}</span>
+              </div>
+              <div class="w-full h-1.5 bg-[var(--bg-raised)] rounded-full overflow-hidden">
+                <div class="h-full bg-emerald-600 dark:bg-emerald-400 rounded-full" style="width: ${Math.max(u.sessionPct, 1)}%"></div>
+              </div>
+            </div>
+            ${usageMeta(u)}
+          </div>
+        `;
+      };
+
+      if (ipadUsage) ipadUsage.innerHTML = usageProviders.map(renderRow).join('');
+      if (iphoneUsage) iphoneUsage.innerHTML = usageProviders.map(renderRow).join('');
+    }
+
+    function refreshUsageMock() {
+      appendLog('SYSTEM', 'INFO', 'Usage telemetry synchronized with upstream provider APIs');
+      renderUsage();
+    }
+
+    // Render Workstations (Clean List with SVGs, No Emojis, No Fake Blue Active Button)
+    function renderWorkstations() {
+      const active = getActiveMachine();
+
+      // 1. Machine Switcher Modal List
+      const switcherList = document.getElementById('switcherRosterList');
+      if (switcherList) {
+        switcherList.innerHTML = machines.map(m => {
+          const isAct = m.id === active.id;
+          return `
+            <div onclick="selectRemoteMachine('${m.id}')" class="p-3 rounded-xl border transition cursor-pointer flex items-center justify-between ${isAct ? 'border-[#1D4ED8] bg-blue-50/50 dark:bg-blue-900/20' : 'border-[var(--border-color)] bg-[var(--bg-raised)] hover:border-slate-400'}">
+              <div class="flex items-center gap-3">
+                <div class="text-[var(--text-main)]">${platformIcons[m.platform] || platformIcons['macOS']}</div>
+                <div>
+                  <div class="text-xs font-semibold text-[var(--text-main)] flex items-center gap-1.5">
+                    ${m.name}
+                    ${isAct ? '<span class="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-[var(--color-success)] font-mono font-bold">ACTIVE</span>' : ''}
+                  </div>
+                  <div class="text-[11px] text-[var(--text-secondary)]">${machineSubtitle(m)}</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                ${isAct ? '<span class="text-[#1D4ED8] font-bold text-sm">✓</span>' : ''}
+                <button onclick="event.stopPropagation(); openConfirmRemove('${m.id}')" class="min-h-[44px] px-2 text-[11px] font-semibold text-red-600 dark:text-red-400">Remove from this phone</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      // 2. Settings screens (iPad and iPhone share one renderer)
+      renderSettings();
+      renderSessions();
+    }
+
+    // Settings: paired machines, connection, relay, appearance, version, unpair
+    function renderSettings() {
+      const active = getActiveMachine();
+      const route = active.online ? active.route : 'offline';
+      const routeNote = { lan: 'Same network as the hub.', direct: 'Peer to peer over iroh, no relay.', relay: 'Through an iroh relay. Rate limited.', offline: 'The hub does not answer.' }[route];
+      const card = 'p-3 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-color)] space-y-2';
+      const btn = 'min-h-[44px] px-3 rounded-xl border border-[var(--border-color)] text-xs font-semibold text-[var(--text-main)] hover:bg-[var(--bg-raised)] transition';
+      const html = `
+        <div class="${card}">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-[var(--text-main)]">Paired machines</span>
+            <button onclick="openAddMachineModal()" class="min-h-[44px] px-3 rounded-xl bg-[#1D4ED8] text-white text-xs font-semibold">Add machine</button>
+          </div>
+          ${machines.map(m => {
+            const isAct = m.id === active.id;
+            return `
+              <div class="p-2.5 rounded-lg bg-[var(--bg-raised)] border ${isAct ? 'border-[#1D4ED8]' : 'border-[var(--border-color)]'} space-y-1">
+                <div class="flex items-center gap-2.5">
+                  <div class="text-[var(--text-main)]">${platformIcons[m.platform] || platformIcons['macOS']}</div>
+                  <div class="flex-1 min-w-0">
+                    <div class="text-xs font-semibold text-[var(--text-main)] flex items-center gap-1.5">${m.name}<span class="w-1.5 h-1.5 rounded-full ${m.online ? 'bg-emerald-500' : 'bg-slate-400'}"></span></div>
+                    <div class="text-[11px] text-[var(--text-secondary)]">${machineSubtitle(m)}${isAct ? ' · Active' : ''}</div>
+                  </div>
+                </div>
+                <div class="flex gap-2">
+                  ${isAct ? '' : `<button onclick="selectRemoteMachine('${m.id}')" class="${btn} flex-1">Switch</button>`}
+                  <button onclick="openConfirmRemove('${m.id}')" class="${btn} flex-1 text-red-600 dark:text-red-400">Remove from this phone</button>
+                </div>
+              </div>`;
+          }).join('')}
+        </div>
+
+        <div class="${card}">
+          <span class="text-xs font-bold text-[var(--text-main)]">Connection</span>
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-[var(--text-secondary)]">Status</span>
+            <span class="font-semibold text-[var(--text-main)]">${route === 'offline' ? 'Not connected' : 'Connected'}</span>
+          </div>
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-[var(--text-secondary)]">Route</span>
+            <span class="font-semibold text-[var(--text-main)]">${ROUTE_LABELS[route]}</span>
+          </div>
+          <p class="text-[11px] text-[var(--text-secondary)]">${routeNote}</p>
+          <button onclick="openRelaySettingsModal()" class="${btn} w-full text-left flex items-center justify-between"><span>Relay settings</span><span aria-hidden="true">&rsaquo;</span></button>
+        </div>
+
+        <div class="${card}">
+          <span class="text-xs font-bold text-[var(--text-main)]">Appearance</span>
+          <button onclick="toggleTheme()" class="${btn} w-full text-left flex items-center justify-between"><span>Theme</span><span class="text-[var(--text-secondary)]">${isDarkMode ? 'Dark' : 'Light'} (tap to switch)</span></button>
+        </div>
+
+        <div class="${card}">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-[var(--text-secondary)]">App version</span>
+            <span class="font-semibold text-[var(--text-main)] mono">0.1.0 prototype</span>
+          </div>
+        </div>
+
+        <button onclick="openConfirmRemove('${active.id}')" class="w-full min-h-[44px] rounded-xl border border-red-500/40 text-red-600 dark:text-red-400 text-xs font-semibold">Unpair current machine</button>
+      `;
+      ['ipadSettingsBody', 'iphoneSettingsBody'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = html;
+      });
+    }
+
+    // Sessions list. Tapping opens the Console for that session.
+    function renderSessions() {
+      const statusCls = { running: 'text-blue-600 dark:text-blue-400 bg-blue-500/10 border-blue-500/20', done: 'text-[var(--color-success)] bg-emerald-500/10 border-emerald-500/20', failed: 'text-red-600 dark:text-red-400 bg-red-500/10 border-red-500/20' };
+      const statusLbl = { running: 'Running', done: 'Done', failed: 'Failed' };
+      const html = sessions.map(s => `
+        <button onclick="openSession('${s.id}')" class="w-full min-h-[44px] text-left p-3 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-color)] hover:border-slate-400 transition space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold text-[var(--text-main)]">${SESSION_AGENT_NAMES[s.agent]}</span>
+            <span class="text-[10px] font-semibold px-2 py-0.5 rounded border ${statusCls[s.status]}">${statusLbl[s.status]}</span>
+          </div>
+          <div class="text-xs text-[var(--text-main)] truncate">${s.prompt}</div>
+          <div class="text-[10px] text-[var(--text-secondary)]">${s.time}</div>
+        </button>
+      `).join('');
+      ['ipadSessionsList', 'iphoneSessionsList'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = html;
+      });
+    }
+    function openSession(id) {
+      const s = sessions.find(x => x.id === id);
+      if (!s) return;
+      appendLog('SYSTEM', 'INFO', `Opened session: ${s.prompt}`);
+      switchIpadTab('today');
+      switchIphoneTab('today');
+    }
+
+    // Confirm sheet for removing a pairing (client only)
+    function openConfirmRemove(id) {
+      machinePendingRemoveId = id;
+      const m = machines.find(x => x.id === id);
+      const nm = document.getElementById('confirmRemoveName');
+      if (nm && m) nm.innerText = m.name;
+      openModal('confirmRemoveModal');
+    }
+    function closeConfirmRemove() {
+      machinePendingRemoveId = null;
+      closeModal('confirmRemoveModal');
+    }
+    function confirmRemoveMachine() {
+      if (machinePendingRemoveId) {
+        machines = machines.filter(m => m.id !== machinePendingRemoveId);
+        if (machines.length === 0) {
+          machines = [{ id: 'placeholder', name: 'No machine paired', platform: 'Cloud', route: 'offline', latency: 0, online: false }];
+        }
+        if (!machines.some(m => m.id === activeMachineId)) activeMachineId = machines[0].id;
+      }
+      closeConfirmRemove();
+      selectRemoteMachine(activeMachineId);
+    }
+
+    // QR scan flow (no URL or token field: the QR carries the pairing data)
+    let scanState = 'camera';
+    function setScanState(s) { scanState = s; renderScanState(); }
+    function renderScanState() {
+      const el = document.getElementById('scanBody');
+      if (!el) return;
+      const cancel = `<button onclick="closeAddMachineModal()" class="flex-1 min-h-[44px] rounded-xl border border-[var(--border-color)] text-[var(--text-main)] font-semibold text-xs hover:bg-[var(--bg-raised)] transition">Cancel</button>`;
+      const primary = (label, fn) => `<button onclick="${fn}" class="flex-1 min-h-[44px] rounded-xl bg-[#1D4ED8] hover:bg-[#1E40AF] text-white font-semibold text-xs shadow-sm transition">${label}</button>`;
+      if (scanState === 'camera') {
+        el.innerHTML = `
+          <div class="relative mx-auto w-full aspect-square max-w-[260px] rounded-2xl bg-slate-900 overflow-hidden" role="img" aria-label="Camera viewfinder">
+            <div class="absolute inset-6">
+              <span class="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-white rounded-tl-xl"></span>
+              <span class="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-white rounded-tr-xl"></span>
+              <span class="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-white rounded-bl-xl"></span>
+              <span class="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-white rounded-br-xl"></span>
+            </div>
+          </div>
+          <p class="text-xs text-center text-[var(--text-main)]">Point the camera at the QR code in AgnView on your computer</p>
+          <button onclick="setScanState('pairing')" class="w-full min-h-[44px] text-xs font-semibold text-[var(--link-accent)]">Open pairing link instead</button>
+          <div class="flex gap-2">${cancel}</div>`;
+      } else if (scanState === 'pairing') {
+        el.innerHTML = `
+          <div class="py-6 flex flex-col items-center gap-3 text-center">
+            <div class="w-8 h-8 rounded-full border-2 border-[var(--border-color)] border-t-[#1D4ED8] animate-spin" aria-hidden="true"></div>
+            <p class="text-xs font-semibold text-[var(--text-main)]">Pairing in progress</p>
+            <p class="text-[11px] text-[var(--text-secondary)]">Trying LAN, then Direct, then Relay.</p>
+          </div>
+          <div class="flex gap-2">${cancel}</div>`;
+      } else if (scanState === 'success') {
+        el.innerHTML = `
+          <div class="py-4 flex flex-col items-center gap-2 text-center">
+            <div class="w-10 h-10 rounded-full bg-emerald-500/10 text-[var(--color-success)] flex items-center justify-center" aria-hidden="true"><svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></div>
+            <p class="text-xs font-semibold text-[var(--text-main)]">Paired with Lab Desktop</p>
+            <p class="text-[11px] text-[var(--text-secondary)]">Linux · Route: Direct</p>
+          </div>
+          <div class="flex gap-2">${primary('Done', 'finishPairing()')}</div>`;
+      } else {
+        el.innerHTML = `
+          <div class="py-4 flex flex-col items-center gap-2 text-center">
+            <div class="w-10 h-10 rounded-full bg-red-500/10 text-red-600 dark:text-red-400 flex items-center justify-center font-bold" aria-hidden="true">!</div>
+            <p class="text-xs font-semibold text-[var(--text-main)]">This code is invalid or expired</p>
+            <p class="text-[11px] text-[var(--text-secondary)]">Show a fresh QR code in AgnView on your computer and scan it again.</p>
+          </div>
+          <div class="flex gap-2">${cancel}${primary('Scan again', "setScanState('camera')")}</div>`;
+      }
+    }
+    function finishPairing() {
+      const id = 'paired-' + (machines.length + 1);
+      machines.push({ id, name: 'Lab Desktop', platform: 'Linux', route: 'direct', latency: 14, online: true });
+      selectRemoteMachine(id);
+      closeAddMachineModal();
+    }
+
+    // Connection state preview (prototype only)
+    function setPreviewState(s) {
+      previewState = s;
+      const sel = document.getElementById('previewStateSelect');
+      if (sel) sel.value = s;
+      renderConnectionState();
+    }
+    function renderConnectionState() {
+      const banner = (tone, title, body) => `
+        <div class="p-3 rounded-xl border ${tone} text-xs space-y-0.5" role="status"><div class="font-semibold">${title}</div><div class="text-[11px] opacity-90">${body}</div></div>`;
+      const full = (title, body, btn, fn) => `
+        <div class="max-w-xs text-center space-y-3">
+          <div class="text-sm font-bold text-[var(--text-main)]">${title}</div>
+          <p class="text-xs text-[var(--text-secondary)] leading-relaxed">${body}</p>
+          <button onclick="${fn}" class="w-full min-h-[44px] px-4 rounded-xl bg-[#1D4ED8] text-white text-xs font-semibold">${btn}</button>
+        </div>`;
+      let bannerHtml = '';
+      let overlayHtml = '';
+      if (previewState === 'relayonly') {
+        bannerHtml = banner('border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300', 'Relay only', 'Allow phones on my network is off, so this phone connects over iroh only.');
+      } else if (previewState === 'offline') {
+        overlayHtml = full('Hub offline', 'AgnView on your computer does not answer. Check that it is running and awake.', 'Retry', "setPreviewState('normal')");
+      } else if (previewState === 'auth') {
+        overlayHtml = full('Authentication failed (401)', 'The hub rejected this phone. Pair it again to continue.', 'Re-pair', "setPreviewState('normal'); openAddMachineModal()");
+      } else if (previewState === 'revoked') {
+        overlayHtml = full('Key revoked', 'The key was regenerated on the hub, so this pairing no longer works. Scan the new QR code to pair again.', 'Pair again', "setPreviewState('normal'); openAddMachineModal()");
+      }
+      [['ipadStateBanner', bannerHtml], ['iphoneStateBanner', bannerHtml], ['ipadStateOverlay', overlayHtml], ['iphoneStateOverlay', overlayHtml]].forEach(([id, html]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.innerHTML = html;
+        if (id.endsWith('Overlay')) el.classList.toggle('hidden', !html);
+      });
+      // Route follows the preview state
+      const map = { normal: 'lan', offline: 'offline', auth: 'offline', revoked: 'offline', relayonly: 'direct' };
+      currentTransportState = map[previewState];
+      renderTransportState();
+    }
+
+    // Select Remote Machine
+    function selectRemoteMachine(id) {
+      activeMachineId = id;
+      const m = getActiveMachine();
+      
+      // Update iPad Sidebar Card
+      const ipadIcon = document.getElementById('ipadActivePlatformIconSvg');
+      const ipadName = document.getElementById('ipadActiveMachineName');
+      const ipadUrl = document.getElementById('ipadActiveMachineUrl');
+      const ipadLat = document.getElementById('ipadActiveMachineLatency');
+      if (ipadIcon) ipadIcon.innerHTML = platformIcons[m.platform] || platformIcons['macOS'];
+      if (ipadName) ipadName.innerText = m.name;
+      if (ipadUrl) ipadUrl.innerText = machineSubtitle(m);
+      if (ipadLat) ipadLat.innerText = `${m.latency}ms`;
+
+      // Update iPhone Header Bar
+      const iphoneIcon = document.getElementById('iphoneActivePlatformIconSvg');
+      const iphoneName = document.getElementById('iphoneActiveMachineName');
+      const iphoneSub = document.getElementById('iphoneActiveMachineSub');
+      if (iphoneIcon) iphoneIcon.innerHTML = platformIcons[m.platform] || platformIcons['macOS'];
+      if (iphoneName) iphoneName.innerText = m.name;
+      if (iphoneSub) iphoneSub.innerText = `${machineSubtitle(m)} · ${m.latency}ms`;
+
+      // Update Dispatch Button text with destination
+      const dispatchBtn = document.getElementById('dispatchSubmitBtn');
+      const dispatchTarget = document.getElementById('dispatchTargetLabel');
+      if (dispatchBtn) dispatchBtn.innerText = `Run on ${m.name}`;
+      if (dispatchTarget) dispatchTarget.innerText = `Target: ${m.name}`;
+
+      appendLog('GATEWAY', 'INFO', `Connected to ${m.name} (${machineSubtitle(m)}) · ${m.latency}ms`);
+      renderWorkstations();
+      closeMachineSwitcherModal();
+    }
+
+    function pingAllMachinesSimulated() {
+      machines.forEach(m => {
+        m.latency = Math.max(2, m.latency + Math.floor(Math.random() * 5) - 2);
+      });
+      renderWorkstations();
+      const active = getActiveMachine();
+      const ipadLat = document.getElementById('ipadActiveMachineLatency');
+      const iphoneSub = document.getElementById('iphoneActiveMachineSub');
+      if (ipadLat) ipadLat.innerText = `${active.latency}ms`;
+      if (iphoneSub) iphoneSub.innerText = `${machineSubtitle(active)} · ${active.latency}ms`;
+    }
+
+    // Escape untrusted text before it is dropped into innerHTML (chat bubbles)
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.innerText = str == null ? '' : String(str);
+      return div.innerHTML;
+    }
+
+    // Apple-aesthetic Conversational Chat Render (Tag 08 & Tag 09)
+    function renderLogs() {
+      const ipadLogs = document.getElementById('ipadLiveLogs');
+      const iphoneLogs = document.getElementById('iphoneLogsList');
+
+      const renderBubble = (l, isSmall = false) => {
+        const isUser = l.agent === 'User' || l.agent === 'You';
+        const isSystem = l.agent === 'SYSTEM' || l.agent === 'GATEWAY' || l.agent === 'REVISION';
+        
+        if (isSystem) {
+          return `
+            <div class="flex justify-center my-1.5">
+              <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-[var(--bg-raised)] text-[var(--text-secondary)] font-mono border border-[var(--border-color)]">
+                ${escapeHtml(l.msg)} · ${l.time}
+              </span>
+            </div>
+          `;
+        }
+
+        if (isUser) {
+          return `
+            <div class="flex justify-start my-1.5 w-full">
+              <div class="flex items-start gap-2 max-w-[85%] text-left text-start">
+                <div class="${isSmall ? 'w-6 h-6 text-[10px]' : 'w-7 h-7 text-xs'} rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold shrink-0 shadow-2xs">
+                  Y
+                </div>
+                <div class="bg-blue-600/10 border border-blue-600/20 text-[var(--text-main)] ${isSmall ? 'px-2.5 py-1.5 text-xs' : 'px-3 py-1.5 text-xs sm:text-[13px]'} rounded-xl rounded-tl-xs leading-snug break-words text-left text-start shadow-2xs">
+                  <div class="text-[10px] text-[var(--text-secondary)] font-mono mb-0.5 text-left text-start">You · ${l.time}</div>
+                  <div class="text-left text-start font-sans leading-relaxed">${escapeHtml(l.msg.trim())}</div>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        let agentBadgeBg = 'bg-slate-700';
+        let brandLogoSvg = '';
+        if (l.agent === 'Claude' || l.agent === 'claude' || l.agent === 'claude_code') {
+          agentBadgeBg = 'bg-[#CC6B49]';
+          brandLogoSvg = `<svg class="w-3.5 h-3.5 fill-white shrink-0" viewBox="0 0 24 24" aria-label="Anthropic Claude"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg>`;
+        } else if (l.agent === 'Codex' || l.agent === 'chatgpt') {
+          agentBadgeBg = 'bg-[#10A37F]';
+          brandLogoSvg = `<svg class="w-3.5 h-3.5 fill-white shrink-0" viewBox="0 0 24 24" aria-label="OpenAI ChatGPT / Codex"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.5045 4.5045 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.02 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.4097 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.4592a.7948.7948 0 0 0-.3927.6813v6.7225zm1.9067-1.107l2.4578-1.419 2.4578 1.419v2.838l-2.4578 1.419-2.4578-1.419z"/></svg>`;
+        } else if (l.agent === 'AGY' || l.agent === 'AntiGravity' || l.agent === 'antigravity') {
+          agentBadgeBg = 'bg-[#1A73E8]';
+          brandLogoSvg = `<svg class="w-3.5 h-3.5 fill-white shrink-0" viewBox="0 0 24 24" aria-label="Google Gemini AntiGravity"><path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></svg>`;
+        } else if (l.agent === 'DeepSeek' || l.agent === 'deepseek') {
+          agentBadgeBg = 'bg-[#0066FF]';
+          brandLogoSvg = `<svg class="w-3.5 h-3.5 fill-white shrink-0" viewBox="0 0 24 24" aria-label="DeepSeek"><path d="M23.748 4.651c-.254-.124-.364.113-.512.233-.051.04-.094.09-.137.137-.372.397-.806.657-1.373.626-.829-.046-1.537.214-2.163.848-.133-.782-.575-1.248-1.247-1.548-.352-.155-.708-.311-.955-.65-.172-.24-.219-.509-.305-.774-.055-.16-.11-.323-.293-.35-.2-.031-.278.136-.356.276-.313.572-.434 1.202-.422 1.84.027 1.436.633 2.58 1.838 3.393.137.094.172.187.129.323-.082.28-.18.553-.266.833-.055.179-.137.218-.328.14a5.5 5.5 0 0 1-1.737-1.179c-.857-.828-1.631-1.743-2.597-2.46a12 12 0 0 0-.689-.47c-.985-.957.13-1.743.387-1.836.27-.098.094-.433-.778-.428-.872.003-1.67.295-2.687.685a3 3 0 0 1-.465.136 9.6 9.6 0 0 0-2.883-.101c-1.885.21-3.39 1.1-4.497 2.622C.082 8.776-.231 10.854.152 13.02c.403 2.284 1.568 4.175 3.36 5.653 1.857 1.533 3.997 2.284 6.438 2.14 1.482-.085 3.132-.284 4.994-1.86.47.234.962.328 1.78.398.629.058 1.235-.031 1.705-.129.735-.155.684-.836.418-.961-2.155-1.004-1.682-.595-2.112-.926 1.095-1.295 2.768-3.598 3.284-6.733.05-.346.115-.834.108-1.114-.004-.171.035-.238.23-.257a4.2 4.2 0 0 0 1.545-.475c1.397-.763 1.96-2.016 2.093-3.517.02-.23-.004-.467-.247-.588M11.58 18.168c-2.088-1.642-3.101-2.183-3.52-2.16-.39.024-.32.472-.234.763.09.288.207.487.371.74.114.167.192.416-.113.603-.673.416-1.842-.14-1.897-.168-1.361-.801-2.5-1.86-3.301-3.306-.775-1.393-1.225-2.888-1.299-4.482-.02-.385.094-.522.477-.592a4.7 4.7 0 0 1 1.53-.038c2.131.311 3.946 1.264 5.467 2.774.868.86 1.525 1.887 2.202 2.89.72 1.066 1.494 2.082 2.48 2.915.348.291.626.513.892.677-.802.09-2.14.109-3.055-.615zm1.001-6.44a.306.306 0 0 1 .415-.287.3.3 0 0 1 .113.074.3.3 0 0 1 .086.214c0 .17-.136.307-.308.307a.303.303 0 0 1-.306-.307m3.11 1.596c-.2.081-.4.151-.591.16a1.25 1.25 0 0 1-.798-.254c-.274-.23-.47-.358-.551-.758a1.7 1.7 0 0 1 .015-.588c.07-.327-.007-.537-.238-.727-.188-.156-.426-.199-.689-.199a.6.6 0 0 1-.254-.078.253.253 0 0 1-.114-.358 1 1 0 0 1 .192-.21c.356-.202.767-.136 1.146.016.352.144.618.408 1.001.782.392.451.462.576.685.915.176.264.336.536.446.848.066.194-.02.353-.25.45"/></svg>`;
+        } else {
+          brandLogoSvg = `<span class="text-white font-bold text-[10px]">${l.agent.charAt(0)}</span>`;
+        }
+
+        return `
+          <div class="flex justify-start my-1.5 w-full">
+            <div class="flex items-start gap-2 max-w-[90%] text-left text-start">
+              <div class="${isSmall ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg ${agentBadgeBg} flex items-center justify-center shrink-0 shadow-2xs p-1">
+                ${brandLogoSvg}
+              </div>
+              <div class="bg-[var(--bg-surface)] border border-[var(--border-color)] text-[var(--text-main)] ${isSmall ? 'px-2.5 py-1.5 text-xs' : 'px-3 py-1.5 text-xs sm:text-[13px]'} rounded-xl rounded-tl-xs leading-snug break-words text-left text-start shadow-2xs">
+                <div class="flex items-center gap-1.5 mb-0.5 text-left text-start">
+                  <span class="font-bold text-[11px] text-[var(--text-main)]">${l.agent}</span>
+                  <span class="text-[10px] text-[var(--text-secondary)] font-mono">${l.time}</span>
+                  <span class="text-[9px] px-1 py-0.2 rounded font-mono uppercase ${l.level === 'DONE' ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 font-bold' : 'bg-blue-500/15 text-blue-700 dark:text-blue-400 font-bold'}">${l.level}</span>
+                </div>
+                <div class="text-left text-start font-sans leading-relaxed">${escapeHtml(l.msg.trim())}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      };
+
+      if (ipadLogs) ipadLogs.innerHTML = logEntries.map(l => renderBubble(l, false)).join('');
+      if (iphoneLogs) iphoneLogs.innerHTML = logEntries.slice(0, 6).map(l => renderBubble(l, true)).join('');
+    }
+
+    function sendMockupIpadMessage() {
+      const input = document.getElementById('ipadChatInput');
+      if (!input || !input.value.trim()) return;
+      const text = input.value.trim();
+      input.value = '';
+      appendLog('You', 'USER', text);
+      setTimeout(() => {
+        appendLog('Claude', 'INFO', `Received instruction: "${text}". Running execution workflow...`);
+      }, 700);
+    }
+
+    const IPHONE_AGENT_CONFIG = {
+      claude: { name: 'Claude', bg: 'bg-[#CC6B49]', placeholder: 'Message Claude...' },
+      codex: { name: 'Codex', bg: 'bg-[#10A37F]', placeholder: 'Message Codex...' },
+      agy: { name: 'AntiGravity', bg: 'bg-[#1A73E8]', placeholder: 'Message AntiGravity...' },
+      deepseek: { name: 'DeepSeek', bg: 'bg-[#0066FF]', placeholder: 'Message DeepSeek...' }
+    };
+
+    function setIphoneAgent(agent) {
+      selectedIphoneAgent = agent;
+      const cfg = IPHONE_AGENT_CONFIG[agent] || IPHONE_AGENT_CONFIG.claude;
+      
+      // Update top pill buttons
+      ['claude', 'codex', 'agy', 'deepseek'].forEach(a => {
+        const btn = document.getElementById(`iphoneAgentBtn-${a}`);
+        if (btn) {
+          if (a === agent) {
+            const agentCfg = IPHONE_AGENT_CONFIG[a];
+            btn.className = `flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold ${agentCfg.bg} text-white shadow-xs shrink-0 transition`;
+          } else {
+            btn.className = "flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-main)] shrink-0 transition";
+          }
+        }
+      });
+
+      // Update input composer badge & placeholder
+      const badge = document.getElementById('iphoneInputAgentBadge');
+      const name = document.getElementById('iphoneInputAgentName');
+      const input = document.getElementById('iphoneChatInput');
+      if (badge) {
+        badge.className = `px-2 py-1 rounded-lg ${cfg.bg} text-white text-[11px] font-semibold flex items-center gap-1 shrink-0 transition`;
+      }
+      if (name) name.innerText = cfg.name;
+      if (input) input.placeholder = cfg.placeholder;
+    }
+
+    function cycleIphoneAgent() {
+      const order = ['claude', 'codex', 'agy', 'deepseek'];
+      const nextIndex = (order.indexOf(selectedIphoneAgent) + 1) % order.length;
+      setIphoneAgent(order[nextIndex]);
+    }
+
+    function sendMockupIphoneMessage() {
+      const input = document.getElementById('iphoneChatInput');
+      if (!input || !input.value.trim()) return;
+      const text = input.value.trim();
+      input.value = '';
+      appendLog('You', 'USER', text);
+      const agentCfg = IPHONE_AGENT_CONFIG[selectedIphoneAgent] || IPHONE_AGENT_CONFIG.claude;
+      setTimeout(() => {
+        appendLog(agentCfg.name, 'INFO', `Received instruction on mobile companion. Executing on ${getActiveMachine().name}...`);
+      }, 700);
+    }
+
+    function appendLog(agent, level, msg) {
+      if (isLogPaused) return;
+      const now = new Date().toTimeString().split(' ')[0];
+      logEntries.unshift({ id: 'l-' + Date.now(), time: now, agent: agent, level: level, msg: msg });
+      renderLogs();
+    }
+
+    function toggleLogPause() {
+      isLogPaused = !isLogPaused;
+      const btn = document.getElementById('btnLogPause');
+      if (btn) btn.innerText = isLogPaused ? 'Resume' : 'Pause';
+    }
+
+    function copyLogStream() {
+      const text = logEntries.map(l => `[${l.time}] [${l.agent}] [${l.level}] ${l.msg}`).join('\n');
+      navigator.clipboard.writeText(text);
+      alert('Logs copied to clipboard.');
+    }
+
+    const IPAD_FILTER_ACTIVE_STYLES = {
+      all: 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-semibold shadow-xs',
+      claude: 'bg-[#CC6B49] text-white font-semibold shadow-xs',
+      codex: 'bg-[#10A37F] text-white font-semibold shadow-xs',
+      agy: 'bg-[#1A73E8] text-white font-semibold shadow-xs',
+      deepseek: 'bg-[#0066FF] text-white font-semibold shadow-xs'
+    };
+
+    function setLogFilter(agent) {
+      ['all', 'codex', 'claude', 'agy', 'deepseek'].forEach(a => {
+        const btn = document.getElementById(`logFilter-${a}`);
+        if (btn) {
+          if (a === agent) {
+            btn.className = `flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs transition ${IPAD_FILTER_ACTIVE_STYLES[a] || 'bg-slate-900 text-white'}`;
+          } else {
+            btn.className = "flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-main)] transition";
+          }
+        }
+      });
+    }
+
+    // Interactive Revision Sheet Flow
+    function triggerRevisionSheet(taskId) {
+      const pipe = getActivePipeline();
+      const task = pipe.tasks.find(t => t.id === taskId) || pipe.tasks[0];
+      const active = getActiveMachine();
+
+      document.getElementById('revisionSubtitle').innerText = `Feedback for ${task.title}`;
+      document.getElementById('revisionDispatchTargetNotice').innerText = `Will dispatch revision to ${task.agent} on ${active.name}`;
+      document.getElementById('revisionFeedbackInput').value = '';
+      openModal('revisionModal');
+    }
+
+    function closeRevisionSheet() {
+      closeModal('revisionModal');
+    }
+
+    function submitRevision() {
+      const fb = document.getElementById('revisionFeedbackInput').value.trim();
+      const pipe = getActivePipeline();
+      const task = pipe.tasks.find(t => t.id === currentSelectedTaskId) || pipe.tasks[0];
+
+      if (!fb) return;
+
+      task.status = 'in_progress';
+      task.progress = 30;
+      task.output = `Revision in progress: "${fb}"`;
+
+      appendLog('REVISION', 'INFO', `Requested revision on ${task.title}: "${fb}"`);
+      renderTasks();
+      closeRevisionSheet();
+      inspectTask(task.id);
+    }
+
+    // Modal & Focus Trap Management (WCAG 2.2 Compliant)
+    function openModal(id, triggerBtn = null) {
+      if (triggerBtn) activeModalTrigger = triggerBtn;
+      const modal = document.getElementById(id);
+      if (!modal) return;
+
+      modal.classList.remove('hidden');
+
+      // Focus first focusable element
+      const focusable = modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (focusable.length > 0) {
+        setTimeout(() => focusable[0].focus(), 50);
+      }
+    }
+
+    function closeModal(id) {
+      const modal = document.getElementById(id);
+      if (!modal) return;
+      modal.classList.add('hidden');
+
+      // Restore focus to triggering button
+      if (activeModalTrigger) {
+        activeModalTrigger.focus();
+        activeModalTrigger = null;
+      }
+    }
+
+    // Global Keydown: Escape key closes active modal
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        ['dispatchModal', 'machineSwitcherModal', 'addMachineModal', 'taskDetailModal', 'revisionModal', 'relaySettingsModal', 'confirmRemoveModal'].forEach(id => {
+          const m = document.getElementById(id);
+          if (m && !m.classList.contains('hidden')) {
+            closeModal(id);
+          }
+        });
+      }
+    });
+
+    // Tag 01: Simplified Model Names (Clean, without verbose brackets)
+    const MOCKUP_MODELS = {
+      claude: [
+        { id: "", name: "Default (Fable 5.1 / Opus 5)" },
+        { id: "claude-fable-5-1", name: "Fable 5.1" },
+        { id: "claude-fable-5", name: "Fable 5" },
+        { id: "claude-opus-5", name: "Opus 5" },
+        { id: "claude-opus-4-8", name: "Opus 4.8" },
+        { id: "claude-opus-4-7", name: "Opus 4.7" },
+        { id: "claude-sonnet-5", name: "Sonnet 5" },
+        { id: "claude-3-7-sonnet", name: "Sonnet 3.7" }
+      ],
+      codex: [
+        { id: "", name: "Default (GPT-6 Astra)" },
+        { id: "gpt-6-astra", name: "GPT-6 Astra" },
+        { id: "gpt-5-codex", name: "GPT-5 Codex" },
+        { id: "gpt-5", name: "GPT-5" },
+        { id: "o3-mini", name: "o3-mini" },
+        { id: "o3", name: "o3" },
+        { id: "o1", name: "o1" },
+        { id: "gpt-4o", name: "GPT-4o" }
+      ],
+      agy: [
+        { id: "", name: "Default (Gemini 3.8 Flash)" },
+        { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash" },
+        { id: "gemini-3.7-flash", name: "Gemini 3.7 Flash" },
+        { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash" },
+        { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro" },
+        { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+        { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" }
+      ],
+      deepseek: [
+        { id: "", name: "Default (DeepSeek R1)" },
+        { id: "deepseek-reasoner", name: "DeepSeek R1" },
+        { id: "deepseek-chat", name: "DeepSeek V3" },
+        { id: "deepseek-coder", name: "DeepSeek Coder 2.5" }
+      ]
+    };
+
+    // Tag 02: Simple Reasoning Efforts Without Token Counts
+    const MOCKUP_EFFORTS = {
+      claude: [
+        { id: "", name: "Default" },
+        { id: "low", name: "Low Effort" },
+        { id: "medium", name: "Medium Effort" },
+        { id: "high", name: "High Effort" },
+        { id: "max", name: "Maximum Effort" }
+      ],
+      codex: [
+        { id: "", name: "Default" },
+        { id: "low", name: "Low Reasoning" },
+        { id: "medium", name: "Medium Reasoning" },
+        { id: "high", name: "High Reasoning" },
+        { id: "max", name: "Maximum Reasoning" }
+      ],
+      agy: [
+        { id: "", name: "Default" },
+        { id: "low", name: "Low Reasoning" },
+        { id: "medium", name: "Medium Reasoning" },
+        { id: "high", name: "High Reasoning" }
+      ],
+      deepseek: [
+        { id: "", name: "Default" },
+        { id: "deep_reason", name: "Deep Reasoning" },
+        { id: "fast_chat", name: "Fast Generation" }
+      ]
+    };
+
+    function updateModalModelAndEffortDropdowns() {
+      const modelSelect = document.getElementById('modalModelSelect');
+      const effortSelect = document.getElementById('modalEffortSelect');
+      const models = MOCKUP_MODELS[selectedModalAgent] || MOCKUP_MODELS.claude;
+      const efforts = MOCKUP_EFFORTS[selectedModalAgent] || MOCKUP_EFFORTS.claude;
+
+      if (modelSelect) {
+        modelSelect.innerHTML = models.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+      }
+      if (effortSelect) {
+        effortSelect.innerHTML = efforts.map(e => `<option value="${e.id}">${e.name}</option>`).join('');
+      }
+    }
+
+    function triggerDispatchModal() {
+      openModal('dispatchModal');
+      updateModalModelAndEffortDropdowns();
+      document.getElementById('modalPromptInput').focus();
+    }
+    function closeDispatchModal() {
+      closeModal('dispatchModal');
+    }
+
+    function openMachineSwitcherModal() {
+      renderWorkstations();
+      openModal('machineSwitcherModal');
+    }
+    function closeMachineSwitcherModal() {
+      closeModal('machineSwitcherModal');
+    }
+
+    function openAddMachineModal() {
+      scanState = 'camera';
+      renderScanState();
+      openModal('addMachineModal');
+    }
+    function closeAddMachineModal() {
+      closeModal('addMachineModal');
+    }
+
+    // Relay Settings Modal (static/mock - prototype only)
+    let relayServerValue = '';
+    function openRelaySettingsModal() {
+      const input = document.getElementById('relayServerInput');
+      const status = document.getElementById('relaySettingsStatus');
+      if (input) input.value = relayServerValue;
+      if (status) status.classList.add('hidden');
+      openModal('relaySettingsModal');
+    }
+    function closeRelaySettingsModal() {
+      closeModal('relaySettingsModal');
+    }
+    function testRelayServer() {
+      const input = document.getElementById('relayServerInput');
+      const status = document.getElementById('relaySettingsStatus');
+      const url = input ? input.value.trim() : '';
+      if (!status) return;
+      status.classList.remove('hidden');
+      status.className = 'text-[11px] text-[var(--color-success)]';
+      status.innerText = url ? `Reached ${url} in 38ms (prototype only, not a real check).` : 'Reached the free public relays in 41ms (prototype only, not a real check).';
+    }
+    function saveRelayServer() {
+      const input = document.getElementById('relayServerInput');
+      relayServerValue = input ? input.value.trim() : '';
+      appendLog('SYSTEM', 'INFO', relayServerValue ? `Relay server set to ${relayServerValue}` : 'Relay server cleared - using the free public relays');
+      closeRelaySettingsModal();
+    }
+
+    // Transport Indicator (Tag 23: LAN / Direct / Relay / Offline - static/mock cycle)
+    const TRANSPORT_STATES = {
+      lan: {
+        label: 'LAN',
+        color: 'text-[var(--color-success)]',
+        title: 'Transport: LAN - on your local network (tap to cycle, prototype only)',
+        icon: '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>'
+      },
+      direct: {
+        label: 'Direct',
+        color: 'text-[var(--color-action)]',
+        title: 'Transport: Direct - peer-to-peer, no relay (tap to cycle, prototype only)',
+        icon: '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></svg>'
+      },
+      relay: {
+        label: 'Relay',
+        color: 'text-[var(--color-warning)]',
+        title: 'Transport: Relay - via an iroh relay, rate limited (tap to cycle, prototype only)',
+        icon: '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>'
+      },
+      offline: {
+        label: 'Offline',
+        color: 'text-[var(--color-error)]',
+        title: 'Transport: Offline - no connection to this host (tap to cycle, prototype only)',
+        icon: '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>'
+      }
+    };
+    let currentTransportState = 'lan';
+    function renderTransportState() {
+      const state = TRANSPORT_STATES[currentTransportState];
+      const btn = document.getElementById('transportIndicator');
+      const icon = document.getElementById('transportIcon');
+      const label = document.getElementById('transportLabel');
+      if (icon) { icon.innerHTML = state.icon; icon.className = `${state.color} flex items-center`; }
+      if (label) label.innerText = state.label;
+      if (btn) btn.title = state.title;
+    }
+    function cycleTransportState() {
+      const order = ['lan', 'direct', 'relay', 'offline'];
+      currentTransportState = order[(order.indexOf(currentTransportState) + 1) % order.length];
+      renderTransportState();
+    }
+
+    function setModalAgent(agent) {
+      selectedModalAgent = agent;
+      ['claude', 'codex', 'agy', 'deepseek'].forEach(a => {
+        const btn = document.getElementById(`agentBtn-${a}`);
+        if (btn) {
+          if (a === agent) {
+            btn.className = "py-1.5 rounded-lg bg-[#1D4ED8] text-white";
+          } else {
+            btn.className = "py-1.5 rounded-lg text-[var(--text-secondary)]";
+          }
+        }
+      });
+      updateModalModelAndEffortDropdowns();
+    }
+
+    // Adding a machine now happens through the QR scan flow (see finishPairing).
+
+    function executeDispatch() {
+      const text = document.getElementById('modalPromptInput').value.trim();
+      if (!text) return;
+      
+      const active = getActiveMachine();
+      const model = document.getElementById('modalModelSelect')?.value || '';
+      const effort = document.getElementById('modalEffortSelect')?.value || '';
+      const meta = [model ? `model:${model}` : null, effort ? `effort:${effort}` : null].filter(Boolean).join(' · ');
+      const metaSuffix = meta ? ` [${meta}]` : '';
+
+      appendLog(selectedModalAgent.toUpperCase(), 'INFO', `[${active.name}]${metaSuffix} ${text}`);
+
+      document.getElementById('modalPromptInput').value = '';
+      closeDispatchModal();
+    }
+
+    // Switch iPad Tab
+    function switchIpadTab(tab) {
+      currentIpadTab = tab;
+      // The iPad sidebar has no nav button for 'pairing' (Tag 09 removed it;
+      // workstation switching lives in the modal instead), so btn is null
+      // for that tab. Skipping it here stops that iteration throwing and
+      // silently aborting the renderUsage()/renderWorkstations() calls below.
+      ['today', 'sessions', 'pipelines', 'usage', 'settings'].forEach(t => {
+        const view = document.getElementById(`ipadView-${t}`);
+        const btn = document.getElementById(`ipadTab-${t}`);
+        if (!view || !btn) return;
+        if (t === tab) {
+          view.classList.remove('hidden');
+          btn.className = "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#1D4ED8] text-white shadow-sm transition";
+        } else {
+          view.classList.add('hidden');
+          btn.className = "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-main)] transition";
+        }
+      });
+      if (tab === 'settings' || tab === 'sessions') renderWorkstations();
+      if (tab === 'usage') renderUsage();
+    }
+
+    // Switch iPhone Tab
+    function switchIphoneTab(tab) {
+      currentIphoneTab = tab;
+      ['today', 'sessions', 'pipelines', 'usage', 'settings'].forEach(t => {
+        const view = document.getElementById(`iphoneScreen-${t}`);
+        const btn = document.getElementById(`iphoneTab-${t}`);
+        if (t === tab) {
+          view.classList.remove('hidden');
+          btn.className = "flex flex-col items-center justify-center text-[#1D4ED8] dark:text-[#93C5FD] transition flex-1 min-h-[44px] font-semibold";
+        } else {
+          view.classList.add('hidden');
+          btn.className = "flex flex-col items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-main)] transition flex-1 min-h-[44px] font-medium";
+        }
+      });
+      if (tab === 'settings' || tab === 'sessions') renderWorkstations();
+      if (tab === 'usage') renderUsage();
+    }
+
+    // View Mode Control
+    function setViewMode(mode) {
+      const ipad = document.getElementById('ipadFrameContainer');
+      const iphone = document.getElementById('iphoneFrameContainer');
+      const btnBoth = document.getElementById('viewSideBySide');
+      const btnIpad = document.getElementById('viewIpadOnly');
+      const btnIphone = document.getElementById('viewIphoneOnly');
+
+      [btnBoth, btnIpad, btnIphone].forEach(b => {
+        b.className = "px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 flex items-center gap-1.5 transition";
+      });
+
+      if (mode === 'both') {
+        ipad.classList.remove('hidden');
+        iphone.classList.remove('hidden');
+        btnBoth.className = "px-3 py-1.5 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm flex items-center gap-1.5 transition";
+      } else if (mode === 'ipad') {
+        ipad.classList.remove('hidden');
+        iphone.classList.add('hidden');
+        btnIpad.className = "px-3 py-1.5 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm flex items-center gap-1.5 transition";
+      } else if (mode === 'iphone') {
+        ipad.classList.add('hidden');
+        iphone.classList.remove('hidden');
+        btnIphone.className = "px-3 py-1.5 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm flex items-center gap-1.5 transition";
+      }
+    }
+
+    // Theme Toggle (Dark & Light Mode including Outer Shell)
+    function toggleTheme() {
+      isDarkMode = !isDarkMode;
+      const themeIcon = document.getElementById('themeIcon');
+      const themeLabel = document.getElementById('themeLabel');
+
+      if (isDarkMode) {
+        document.documentElement.classList.add('dark');
+        document.body.classList.add('dark');
+        themeIcon.innerText = '☀️';
+        themeLabel.innerText = 'Light Mode';
+      } else {
+        document.documentElement.classList.remove('dark');
+        document.body.classList.remove('dark');
+        themeIcon.innerText = '🌙';
+        themeLabel.innerText = 'Dark Mode';
+      }
+      switchIpadTab(currentIpadTab);
+      switchIphoneTab(currentIphoneTab);
+      renderWorkstations();
+      renderTasks();
+      renderUsage();
+    }
+
+    // Initial Load
+    window.addEventListener('DOMContentLoaded', () => {
+      renderTasks();
+      renderLogs();
+      renderUsage();
+      renderWorkstations();
+      renderTransportState();
+      renderScanState();
+      selectRemoteMachine('mac-studio');
+      renderConnectionState();
+      inspectTask('task-auth-1');
+    });
+  </script>
+</body>
+</html>
