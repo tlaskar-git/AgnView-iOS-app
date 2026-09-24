@@ -4,7 +4,7 @@ AgnView iOS is the iOS and iPadOS companion for the public [AgnView hub](https:/
 
 ## Status
 
-Design prototype only. The app is under construction.
+Design prototype plus a SwiftUI app shell with placeholder screens. Pairing and live hub access are not built yet.
 
 ## Folder map
 
@@ -27,7 +27,15 @@ Open `mockups/ios-prototype.html` in a browser.
 
 ## Release setup
 
-See `docs/RELEASE-SETUP.md`, coming with the CI setup.
+See [docs/RELEASE-SETUP.md](docs/RELEASE-SETUP.md) for the signing secrets and the TestFlight release steps.
+
+## CI
+
+- `ci.yml` runs on every push and pull request. It generates the Xcode project with XcodeGen, starts the mock hub, then builds and runs unit and UI tests on an iPhone and an iPad simulator. Screenshots of each screen are kept as workflow artifacts for 14 days.
+- `release.yml` runs when a tag starting with `v` is pushed. It signs and uploads a build to TestFlight and uses the `release` environment secrets. It has not been tested end to end.
+- `gitleaks.yml` scans the repository history.
+- The Xcode project is generated from `project.yml` and is not committed.
+- `Tools/mock-hub/mock_hub.py` is a placeholder-only hub for tests. It binds to the loopback address.
 
 ## Security
 

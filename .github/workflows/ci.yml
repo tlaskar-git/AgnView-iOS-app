@@ -1,0 +1,92 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: build-test (${{ matrix.device }})
+    runs-on: macos-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [iphone, ipad]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install XcodeGen
+        run: |
+          set +x
+          brew install xcodegen
+
+      - name: Generate project
+        run: |
+          set +x
+          xcodegen generate
+
+      - name: Pick simulator
+        id: sim
+        run: |
+          set +x
+          family="iPhone"
+          if [ "${{ matrix.device }}" = "ipad" ]; then family="iPad"; fi
+          udid="$(python3 Tools/ci/pick_sim.py "$family")"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          xcrun simctl list devices available | grep "$udid" || true
+
+      - name: Start mock hub
+        run: |
+          set +x
+          nohup python3 Tools/mock-hub/mock_hub.py 18081 > "$RUNNER_TEMP/mock-hub.log" 2>&1 &
+          python3 Tools/ci/wait_hub.py 18081
+
+      - name: Build and test
+        env:
+          AGNVIEW_MOCK_HUB_URL: http://127.0.0.1:18081
+          UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          set +x
+          xcodebuild test \
+            -scheme AgnView \
+            -destination "platform=iOS Simulator,id=$UDID" \
+            -resultBundlePath "$RUNNER_TEMP/result.xcresult" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Export screenshots
+        if: always()
+        run: |
+          set +x
+          mkdir -p "$RUNNER_TEMP/shots"
+          if [ -d "$RUNNER_TEMP/result.xcresult" ]; then
+            xcrun xcresulttool export attachments \
+              --path "$RUNNER_TEMP/result.xcresult" \
+              --output-path "$RUNNER_TEMP/attachments"
+            python3 Tools/ci/export_screenshots.py "$RUNNER_TEMP/attachments" "$RUNNER_TEMP/shots" "${{ matrix.device }}"
+          else
+            echo "no result bundle found"
+          fi
+          ls -1 "$RUNNER_TEMP/shots"
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: simulator-screenshots-${{ matrix.device }}
+          path: |
+            ${{ runner.temp }}/shots/*.png
+            ${{ runner.temp }}/shots/summary.txt
+          retention-days: 14
+          if-no-files-found: warn

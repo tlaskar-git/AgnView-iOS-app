@@ -1,0 +1,85 @@
+name: AgnView
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  AgnView:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/AgnView
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.agnview
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Config/AgnView-Info.plist
+    info:
+      path: Config/AgnView-Info.plist
+      properties:
+        CFBundleDisplayName: AgnView
+        CFBundleURLTypes:
+          - CFBundleURLName: com.example.agnview
+            CFBundleURLSchemes:
+              - agnview
+        NSCameraUsageDescription: Scan the pairing QR code shown in AgnView on your computer.
+        NSLocalNetworkUsageDescription: AgnView connects to your computer on your local network.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        UILaunchScreen: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+  AgnViewTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: AgnViewTests
+    dependencies:
+      - target: AgnView
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.agnview.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/AgnView.app/AgnView"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+  AgnViewUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: AgnViewUITests
+    dependencies:
+      - target: AgnView
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.agnview.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: AgnView
+schemes:
+  AgnView:
+    build:
+      targets:
+        AgnView: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - AgnViewTests
+        - AgnViewUITests
+    archive:
+      config: Release
