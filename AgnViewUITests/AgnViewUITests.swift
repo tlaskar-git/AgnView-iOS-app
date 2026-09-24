@@ -12,20 +12,31 @@ final class AgnViewUITests: XCTestCase {
         app.launch()
     }
 
+    private func hittable(_ id: String, timeout: TimeInterval) -> XCUIElement? {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            let query = app.descendants(matching: .any).matching(identifier: id)
+            for element in query.allElementsBoundByIndex where element.isHittable {
+                return element
+            }
+            Thread.sleep(forTimeInterval: 0.5)
+        } while Date() < deadline
+        return nil
+    }
+
     private func open(_ name: String) {
         if isPad {
             // The identifier is shared by the cell and its children, so pick a hittable match.
-            let row = app.descendants(matching: .any)
-                .matching(identifier: "nav-" + name.lowercased())
-                .matching(NSPredicate(format: "hittable == true"))
-                .firstMatch
-            if !row.waitForExistence(timeout: 3) {
+            let id = "nav-" + name.lowercased()
+            var row = hittable(id, timeout: 3)
+            if row == nil {
                 // Sidebar hidden in this orientation: reveal it.
                 let toggle = app.navigationBars.buttons.firstMatch
                 if toggle.exists { toggle.tap() }
+                row = hittable(id, timeout: 10)
             }
-            XCTAssertTrue(row.waitForExistence(timeout: 10), "sidebar item \(name) missing")
-            row.tap()
+            XCTAssertNotNil(row, "sidebar item \(name) missing")
+            row?.tap()
         } else {
             let tab = app.tabBars.buttons[name]
             XCTAssertTrue(tab.waitForExistence(timeout: 10), "tab \(name) missing")
