@@ -14,7 +14,11 @@ final class AgnViewUITests: XCTestCase {
 
     private func open(_ name: String) {
         if isPad {
-            let row = app.descendants(matching: .any)["nav-" + name.lowercased()].firstMatch
+            // The identifier is shared by the cell and its children, so pick a hittable match.
+            let row = app.descendants(matching: .any)
+                .matching(identifier: "nav-" + name.lowercased())
+                .matching(NSPredicate(format: "hittable == true"))
+                .firstMatch
             if !row.waitForExistence(timeout: 3) {
                 // Sidebar hidden in this orientation: reveal it.
                 let toggle = app.navigationBars.buttons.firstMatch
