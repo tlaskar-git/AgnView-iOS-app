@@ -179,7 +179,92 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+IROH_ALPN = b"agnview/console/1"
+
+
+async def serve_iroh(ticket_path):
+    """Serve the console protocol over iroh with placeholder data.
+
+    Writes the ephemeral ticket to ticket_path (never to the log). Needs
+    `pip install iroh==1.1.0`. Used only by the optional loopback CI job.
+    """
+    import asyncio
+    import iroh
+
+    endpoint = await iroh.Endpoint.bind(iroh.EndpointOptions(
+        preset=iroh.preset_n0(), alpns=[IROH_ALPN]))
+    ticket = str(iroh.EndpointTicket.from_addr(endpoint.addr()))
+    tmp = ticket_path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        handle.write(ticket)
+    os.replace(tmp, ticket_path)
+    print("iroh console ready")
+    sys.stdout.flush()
+
+    async def write(send, frame):
+        await send.write_all((json.dumps(frame) + "\n").encode("utf-8"))
+
+    def classify(conn):
+        try:
+            paths = list(conn.paths())
+        except Exception:
+            return "iroh-relay"
+        selected = [p for p in paths if getattr(p, "is_selected", False)] or paths
+        for path in selected:
+            if getattr(path, "is_ip", False) and not getattr(path, "is_relay", False):
+                return "iroh-direct"
+        return "iroh-relay"
+
+    async def handle(incoming):
+        conn = None
+        try:
+            conn = await (await incoming.accept()).connect()
+            bi = await conn.accept_bi()
+            send, recv = bi.send(), bi.recv()
+            raw = await recv.read_to_end(64 * 1024)
+            try:
+                request = json.loads(raw.decode("utf-8") or "{}")
+            except ValueError:
+                request = None
+            if not isinstance(request, dict) or request.get("token") != TEST_KEY:
+                detail = "unauthorised" if isinstance(request, dict) else "malformed request"
+                await write(send, {"type": "error", "detail": detail})
+                await send.finish()
+                await asyncio.sleep(1)
+                return
+            await write(send, {"type": "hello", "app": "AgnView", "protocol": 1,
+                               "hostname": "example-host", "transport": classify(conn)})
+            for row in LOGS:
+                frame = dict(row)
+                frame["type"] = "log"
+                await write(send, frame)
+            for _ in range(8):
+                await asyncio.sleep(15)
+                await write(send, {"type": "ping", "transport": classify(conn)})
+        except Exception:
+            return
+        finally:
+            if conn is not None:
+                try:
+                    result = conn.close(0, b"bye")
+                    if asyncio.iscoroutine(result):
+                        await result
+                except Exception:
+                    pass
+
+    tasks = []
+    while True:
+        incoming = await endpoint.accept_next()
+        if incoming is None:
+            break
+        tasks.append(asyncio.ensure_future(handle(incoming)))
+
+
 def main():
+    if len(sys.argv) > 2 and sys.argv[1] == "--iroh":
+        import asyncio
+        asyncio.run(serve_iroh(sys.argv[2]))
+        return
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 18081
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     server.daemon_threads = True

@@ -128,3 +128,63 @@ jobs:
             ${{ runner.temp }}/shots/summary.txt
           retention-days: 14
           if-no-files-found: warn
+
+  iroh-loopback:
+    name: iroh-loopback (optional)
+    runs-on: macos-latest
+    timeout-minutes: 40
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install XcodeGen
+        run: |
+          set +x
+          brew install xcodegen
+
+      - name: Generate project
+        run: |
+          set +x
+          xcodegen generate
+
+      - name: Pick simulator
+        id: sim
+        run: |
+          set +x
+          udid="$(python3 Tools/ci/pick_sim.py iPhone)"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
+      - name: Start iroh console server
+        run: |
+          set +x
+          python3 -m venv "$RUNNER_TEMP/irohenv"
+          "$RUNNER_TEMP/irohenv/bin/pip" install --quiet iroh==1.1.0
+          nohup "$RUNNER_TEMP/irohenv/bin/python" Tools/mock-hub/mock_hub.py --iroh "$RUNNER_TEMP/iroh-ticket" > "$RUNNER_TEMP/iroh-server.log" 2>&1 &
+          for i in $(seq 1 60); do
+            if [ -s "$RUNNER_TEMP/iroh-ticket" ]; then echo "iroh server ready"; break; fi
+            sleep 1
+          done
+          test -s "$RUNNER_TEMP/iroh-ticket"
+
+      - name: Test IrohTransport against the server
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          set +x
+          TEST_RUNNER_AGNVIEW_IROH_TICKET="$(cat "$RUNNER_TEMP/iroh-ticket")"
+          export TEST_RUNNER_AGNVIEW_IROH_TICKET
+          status=0
+          xcodebuild test \
+            -scheme AgnView \
+            -destination "platform=iOS Simulator,id=$UDID" \
+            -only-testing:AgnViewTests/TransportTests/testIrohLoopbackConsole \
+            -only-testing:AgnViewTests/TransportTests/testIrohLoopbackWrongToken \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO > "$RUNNER_TEMP/iroh-test.log" 2>&1 || status=$?
+          grep -E "Test Case|Executed|error:|TEST (SUCCEEDED|FAILED)" "$RUNNER_TEMP/iroh-test.log" || true
+          test "$status" = "0"
+          grep -q "testIrohLoopbackConsole\]' passed" "$RUNNER_TEMP/iroh-test.log"
+          grep -q "testIrohLoopbackWrongToken\]' passed" "$RUNNER_TEMP/iroh-test.log"

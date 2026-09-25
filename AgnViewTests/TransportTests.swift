@@ -251,6 +251,44 @@ final class TransportTests: XCTestCase {
         }
     }
 
+    // MARK: iroh loopback (only the optional iroh-loopback CI job sets the ticket)
+
+    private func loopbackTicket() throws -> String {
+        guard IrohSupport.isLinked,
+              let ticket = ProcessInfo.processInfo.environment["AGNVIEW_IROH_TICKET"],
+              !ticket.isEmpty else {
+            throw XCTSkip("no iroh loopback server in this run")
+        }
+        return ticket
+    }
+
+    func testIrohLoopbackConsole() async throws {
+        let ticket = try loopbackTicket()
+        let session = try await IrohTransport(ticket: ticket, token: "test-key-not-real").connect()
+        XCTAssertTrue([TransportRoute.direct, .relay].contains(session.route))
+        XCTAssertEqual(session.capabilities, [.consoleStream])
+        var frames: [ConsoleFrame] = []
+        for try await frame in session.frames {
+            frames.append(frame)
+            if frames.count == 4 { break }
+        }
+        await session.close()
+        guard case .hello(let hello) = frames.first else { return XCTFail("hello first") }
+        XCTAssertEqual(hello.app, "AgnView")
+        XCTAssertEqual(frames.dropFirst().count, 3)
+    }
+
+    func testIrohLoopbackWrongToken() async throws {
+        let ticket = try loopbackTicket()
+        do {
+            let session = try await IrohTransport(ticket: ticket, token: "wrong-test-value").connect()
+            await session.close()
+            XCTFail("expected unauthorised")
+        } catch {
+            XCTAssertEqual(error as? TransportError, .unauthorised)
+        }
+    }
+
     // MARK: Mock hub (CI starts it on 127.0.0.1:18081)
 
     private func mockHub(token: String = "test-key-not-real") -> LANTransport {
