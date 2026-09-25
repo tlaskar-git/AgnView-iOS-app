@@ -33,17 +33,27 @@ final class AppState: ObservableObject {
     func refresh() async {
         #if DEBUG
         guard let base = MockHub.baseURL else { return }
-        do {
-            let statusData = try await MockHub.get("api/mobile/status", base: base)
-            let usageData = try await MockHub.get("api/usage/accounts", base: base)
-            let status = try MobileStatus.decode(from: statusData)
-            usage = try UsageAccount.decodeList(from: usageData)
-            statusLine = "\(status.service) \(status.version): \(status.status)"
-            route = .lan
-        } catch {
-            statusLine = "Mock hub unreachable"
-            route = .offline
+        for attempt in 1...3 {
+            do {
+                let statusData = try await MockHub.get("api/mobile/status", base: base)
+                let usageData = try await MockHub.get("api/usage/accounts", base: base)
+                let status = try MobileStatus.decode(from: statusData)
+                usage = try UsageAccount.decodeList(from: usageData)
+                statusLine = "\(status.service) \(status.version): \(status.status)"
+                route = .lan
+                return
+            } catch is CancellationError {
+                return
+            } catch let error as URLError where error.code == .cancelled {
+                return
+            } catch {
+                if attempt < 3 {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                }
+            }
         }
+        statusLine = "Mock hub unreachable"
+        route = .offline
         #endif
     }
 }

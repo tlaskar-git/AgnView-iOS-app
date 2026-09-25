@@ -8,6 +8,7 @@ struct AgnViewApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(state)
+                .task { await state.refresh() }
         }
     }
 }
