@@ -147,6 +147,16 @@ jobs:
           fi
           echo "PASS"
 
+      - name: Check the built app icon
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          set +x
+          settings="$(xcodebuild -showBuildSettings -scheme AgnView -destination "platform=iOS Simulator,id=$UDID" 2>/dev/null)"
+          dir="$(echo "$settings" | sed -n 's/^ *BUILT_PRODUCTS_DIR = //p' | head -1)"
+          name="$(echo "$settings" | sed -n 's/^ *FULL_PRODUCT_NAME = //p' | head -1)"
+          sh Tools/ci/check_built_icon.sh "$dir/$name" Sources/AgnView/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+
       - name: Export screenshots
         if: always()
         run: |
