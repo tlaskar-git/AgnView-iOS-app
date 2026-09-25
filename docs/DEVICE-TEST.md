@@ -44,20 +44,22 @@ If anything fails, write down the screen, the route label and the exact on-scree
 2. Wait up to 60 seconds.
 3. [ ] The route label changes to **Direct** or **Relay**.
 4. [ ] Console live output continues.
-5. [ ] The composer is disabled and shows: "Sending prompts needs your local network. Turn on Allow phones on my network in AgnView and join the same Wi-Fi."
-6. [ ] Pipelines shows: "Pipelines need your local network."
-7. [ ] Usage shows: "Usage needs your local network." The last Usage reading stays visible, greyed and dated.
-8. [ ] Sessions shows the banner: "Showing sessions seen in the log stream"
-9. Turn Wi-Fi back on.
-10. [ ] The route label returns to **LAN**.
+5. [ ] The banner shows: "Not on the same Wi-Fi as your computer. Console works over iroh. Prompts, Usage and Pipelines need the same Wi-Fi."
+6. [ ] The composer is disabled and shows: "Sending prompts needs the same Wi-Fi as your computer."
+7. [ ] Pipelines shows: "Pipelines need the same Wi-Fi as your computer."
+8. [ ] Usage shows: "Usage needs the same Wi-Fi as your computer." The last Usage reading stays visible, greyed and dated.
+9. [ ] Sessions shows the banner: "Showing sessions seen in the log stream"
+10. Turn Wi-Fi back on.
+11. [ ] The route label returns to **LAN**.
 
 ## 5. Part C: relay only
 
 1. Keep Wi-Fi on.
 2. In the hub, switch **Allow phones on my network** OFF.
-3. [ ] The phone shows: "Connected through iroh only. Allow phones on my network is off on the hub."
-4. Switch **Allow phones on my network** back ON.
-5. [ ] The banner clears and the route returns to **LAN**. Scan the QR code again if the phone does not reconnect. The QR code always matches the mode that is on.
+3. Scan the pairing QR code that the hub shows now.
+4. [ ] The phone shows: "This pairing has no local network address. In AgnView, turn on Allow phones on my network, then scan the pairing QR code again." A **Scan the QR code again** button sits under the banner.
+5. Switch **Allow phones on my network** back ON. Tap **Scan the QR code again** and scan the new QR code.
+6. [ ] The banner clears and the route returns to **LAN**. The QR code always matches the mode that is on, so the old pairing keeps the old address until you scan again.
 
 ## 6. Part D: key regeneration and unpair
 
@@ -85,6 +87,8 @@ If anything fails, write down the screen, the route label and the exact on-scree
 | QR code rejected | The payload is malformed, or it came from a newer hub than the app supports. Regenerate the code on the hub and scan again. Update the app if the hub is newer. |
 | "The hub rejected this pairing. Scan the QR code again." | The key no longer matches. Scan the current QR code. |
 | "Can't reach this hub. Check that AgnView is running on your computer." | The hub is closed or asleep. Open AgnView on the PC and check it is not quit from the tray. |
+| Banner says the pairing has no local network address | Turn on Allow phones on my network in the hub, then scan the QR code again. |
+| Banner says "Not on the same Wi-Fi as your computer" | The pairing is fine but the phone cannot reach the computer's address. Join the same Wi-Fi as the computer. Guest Wi-Fi with client isolation also blocks LAN. |
 | Stuck on Relay although on the same Wi-Fi | Allow phones on my network is off, so the hub listens on the PC only. Switch it on and scan again. Guest Wi-Fi with client isolation also blocks LAN: use the main network. Check the Windows firewall prompt was allowed. |
 | Build stuck on Missing Compliance | Answer the export compliance questions in App Store Connect. See docs/RELEASE-SETUP.md, section f. |
 

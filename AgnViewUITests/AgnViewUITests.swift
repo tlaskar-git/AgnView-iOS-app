@@ -8,6 +8,18 @@ final class AgnViewUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
+        // Dismiss system alerts such as the camera permission prompt so they
+        // never cover the screenshots.
+        addUIInterruptionMonitor(withDescription: "System alert") { alert in
+            for label in ["Don\u{2019}t Allow", "Don't Allow", "Not Now", "Cancel", "OK", "Allow"] {
+                let button = alert.buttons[label]
+                if button.exists {
+                    button.tap()
+                    return true
+                }
+            }
+            return false
+        }
     }
 
     override func tearDownWithError() throws {
@@ -122,6 +134,7 @@ final class AgnViewUITests: XCTestCase {
     func testOffLANConsoleComposer() throws {
         launch(state: "iroh")
         open("Console")
+        need("banner-not-on-network")
         need("composer-notice")
         need("console-log")
         snap("state-composer-disabled")
@@ -171,6 +184,7 @@ final class AgnViewUITests: XCTestCase {
     func testRelayOnlyState() throws {
         launch(state: "relayOnly")
         need("banner-relay-only")
+        need("banner-scan-again")
         snap("state-relayOnly")
     }
 

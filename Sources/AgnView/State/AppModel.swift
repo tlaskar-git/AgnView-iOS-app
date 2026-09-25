@@ -61,7 +61,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var activeHub: HubRecord?
     @Published private(set) var connection: ConnectionState = .connecting
     @Published private(set) var capabilities: Set<Capability> = []
-    /// True when the hub skipped LAN (loopback pairing) and iroh carries the session.
+    /// True when the ladder skipped LAN (loopback pairing) and iroh carries the session.
     @Published private(set) var relayOnly = false
     /// The console buffer with the agent filter applied.
     @Published private(set) var consoleLines: [ConsoleLine] = []
@@ -92,12 +92,27 @@ final class AppModel: ObservableObject {
     var sessionsAreDerived: Bool { !capabilities.contains(.sessions) }
     var usage: [UsageAccount] { usageSnapshot?.accounts ?? [] }
 
+    /// Why the LAN route is not in use while the session runs, or nil when
+    /// LAN carries it (or nothing is connected). A loopback pairing gives
+    /// pairedWithoutLAN. A real LAN address that failed gives notOnSameNetwork.
+    var lanUnavailableReason: LANUnavailableReason? {
+        guard case .online(let route, _) = connection, route != .lan else { return nil }
+        return relayOnly ? .pairedWithoutLAN : .notOnSameNetwork
+    }
+
     var usageNotice: String? {
-        connection.isOnline && !capabilities.contains(.usage) ? UserMessages.usageNeedsLAN : nil
+        guard connection.isOnline, !capabilities.contains(.usage) else { return nil }
+        return UserMessages.usageNeedsLAN(lanUnavailableReason ?? .notOnSameNetwork)
     }
 
     var jobsNotice: String? {
-        connection.isOnline && !capabilities.contains(.jobs) ? UserMessages.jobsNeedsLAN : nil
+        guard connection.isOnline, !capabilities.contains(.jobs) else { return nil }
+        return UserMessages.jobsNeedsLAN(lanUnavailableReason ?? .notOnSameNetwork)
+    }
+
+    var dispatchNotice: String? {
+        guard connection.isOnline, !canDispatch else { return nil }
+        return UserMessages.dispatchNeedsLAN(lanUnavailableReason ?? .notOnSameNetwork)
     }
 
     var sessionsNotice: String? {
@@ -110,7 +125,7 @@ final class AppModel: ObservableObject {
         case .authFailed: return UserMessages.authFailed
         case .keyRevoked: return UserMessages.keyRevoked
         case .offline: return activeHub == nil ? nil : UserMessages.offlineHub
-        case .online: return relayOnly ? UserMessages.relayOnlyBanner : nil
+        case .online: return lanUnavailableReason.map(UserMessages.lanBanner)
         case .connecting: return nil
         }
     }
@@ -276,7 +291,9 @@ final class AppModel: ObservableObject {
     @discardableResult
     func dispatch(agent: String, prompt: String, workingDir: String? = nil,
                   sessionId: String? = nil) async throws -> DispatchResponse {
-        guard canDispatch else { throw DispatchUnavailable() }
+        guard canDispatch else {
+            throw DispatchUnavailable(message: UserMessages.dispatchNeedsLAN(lanUnavailableReason ?? .notOnSameNetwork))
+        }
         guard let client else { throw HubError.notConnected }
         let request = DispatchRequest(targetAgent: agent, prompt: prompt,
                                       workingDir: workingDir, sessionId: sessionId)
