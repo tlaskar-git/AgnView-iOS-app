@@ -102,8 +102,14 @@ final class AgnViewE2ETests: XCTestCase {
         XCTAssertTrue(prompt.waitForExistence(timeout: 40), "composer missing")
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"),
                                                 object: prompt)
-        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 40), .completed,
-                       "composer never became enabled: the hub was not reached over LAN")
+        let result = XCTWaiter().wait(for: [enabled], timeout: 40)
+        if result != .completed {
+            snap("failure-composer-disabled")
+            let pill = element("route-pill").label
+            let status = element("status-line").exists ? element("status-line").label : "none"
+            let notice = element("composer-notice").exists ? element("composer-notice").label : "none"
+            XCTFail("composer never became enabled. route: \(pill). status: \(status). notice: \(notice)")
+        }
     }
 
     private func typePrompt(_ text: String) {

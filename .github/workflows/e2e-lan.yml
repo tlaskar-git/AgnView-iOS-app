@@ -175,6 +175,12 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
+      - name: Show the hub log tail on failure
+        if: failure()
+        run: |
+          set +x
+          tail -40 "$RUNNER_TEMP/hub-e2e.log" | cut -c1-200 || true
+
       - name: Stop the proxy and the hub
         if: always()
         run: |
