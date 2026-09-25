@@ -1,7 +1,7 @@
 import Foundation
 
 /// The hub HTTP paths the phone uses over the LAN.
-enum Endpoint {
+enum HubPath {
     static let status = "/api/mobile/status"
     static let usageAccounts = "/api/usage/accounts"
     static let jobs = "/api/jobs"

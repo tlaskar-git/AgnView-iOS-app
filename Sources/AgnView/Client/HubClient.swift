@@ -22,19 +22,19 @@ final class HubClient {
     }
 
     func status() async throws -> MobileStatus {
-        try HubJSON.decode(MobileStatus.self, from: try await transport.get(Endpoint.status))
+        try HubJSON.decode(MobileStatus.self, from: try await transport.get(HubPath.status))
     }
 
     func usageAccounts() async throws -> [UsageAccount] {
-        try HubJSON.decode([UsageAccount].self, from: try await transport.get(Endpoint.usageAccounts))
+        try HubJSON.decode([UsageAccount].self, from: try await transport.get(HubPath.usageAccounts))
     }
 
     func jobs() async throws -> [Job] {
-        try HubJSON.decode([Job].self, from: try await transport.get(Endpoint.jobs))
+        try HubJSON.decode([Job].self, from: try await transport.get(HubPath.jobs))
     }
 
     func liveSessions() async throws -> [LiveSession] {
-        try HubJSON.decode([LiveSession].self, from: try await transport.get(Endpoint.liveSessions))
+        try HubJSON.decode([LiveSession].self, from: try await transport.get(HubPath.liveSessions))
     }
 
     func dispatch(_ request: DispatchRequest) async throws -> DispatchResponse {
@@ -44,7 +44,7 @@ final class HubClient {
         } catch {
             throw TransportError.protocolViolation
         }
-        let data = try await transport.post(Endpoint.dispatch, json: body)
+        let data = try await transport.post(HubPath.dispatch, json: body)
         if data.isEmpty { return DispatchResponse() }
         return try HubJSON.decode(DispatchResponse.self, from: data)
     }
