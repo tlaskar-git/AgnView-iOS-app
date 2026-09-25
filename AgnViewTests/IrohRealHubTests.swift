@@ -58,7 +58,7 @@ final class IrohRealHubTests: XCTestCase {
 
     func testRealHubAPIAndDispatchOverIroh() async throws {
         let session = try await connect()
-        defer { Task { await session.close() } }
+        addTeardownBlock { await session.close() }
 
         // Hello arrived: the hub lists the api capability.
         let consoleSession = try XCTUnwrap(session as? ConsoleStreamSession)
@@ -111,7 +111,7 @@ final class IrohRealHubTests: XCTestCase {
     /// keeps to the LAN are refused.
     func testRealHubModelEffortSessionsAndLANOnlyRoutes() async throws {
         let session = try await connect()
-        defer { Task { await session.close() } }
+        addTeardownBlock { await session.close() }
         let api = try XCTUnwrap(session.api)
         let client = HubClient(api: api)
 
