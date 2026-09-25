@@ -83,6 +83,14 @@ jobs:
           post /api/usage/accounts '{"provider":"claude","name":"E2E claude","auth_type":"session_token"}'
           curl -sS -H "X-AgnView-Token: $HUB_TOKEN" --max-time 30 "$base/api/jobs" | python -c 'import json,sys; print("jobs:", len(json.load(sys.stdin)))'
 
+      - name: Measure the hub status latency
+        run: |
+          set +x
+          for i in 1 2 3 4 5; do
+            curl -s -o /dev/null -w "direct status %{time_total}s\n" -H "X-AgnView-Token: $HUB_TOKEN" "http://127.0.0.1:$HUB_PORT/api/mobile/status"
+          done
+          curl -s -o /dev/null -w "logs %{time_total}s\n" -H "X-AgnView-Token: $HUB_TOKEN" "http://127.0.0.1:$HUB_PORT/api/console/logs?agent=all&limit=200"
+
       - name: Start the fault proxy
         run: |
           set +x
