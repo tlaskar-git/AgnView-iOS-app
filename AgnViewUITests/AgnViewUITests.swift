@@ -48,7 +48,24 @@ final class AgnViewUITests: XCTestCase {
         XCTAssertTrue(element(id).waitForExistence(timeout: timeout), "\(id) missing")
     }
 
+    /// Closes a system alert (such as the camera permission prompt) that is
+    /// still on screen, because the interruption monitor only runs on a tap.
+    private func dismissSystemAlert() {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let alert = springboard.alerts.firstMatch
+        guard alert.waitForExistence(timeout: 2) else { return }
+        for label in ["Don\u{2019}t Allow", "Don't Allow", "Not Now", "Cancel", "OK", "Allow"] {
+            let button = alert.buttons[label]
+            if button.exists {
+                button.tap()
+                break
+            }
+        }
+        Thread.sleep(forTimeInterval: 1)
+    }
+
     private func snap(_ name: String) {
+        dismissSystemAlert()
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.name = "\(device)-\(name)"
         shot.lifetime = .keepAlways
