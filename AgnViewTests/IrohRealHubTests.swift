@@ -122,10 +122,20 @@ final class IrohRealHubTests: XCTestCase {
                                                                  model: "gpt-5", effort: "low",
                                                                  files: ["README.md"]))
         XCTAssertEqual(response.status, "dispatched")
-        let entry = try await waitForLog(session, seconds: 60) { entry in
-            let content = entry.content ?? ""
-            return content.contains("stub args") && content.contains("reasoning_effort=low")
-                && content.contains("-m gpt-5")
+        let entry: ConsoleFrame.LogEntry
+        do {
+            entry = try await waitForLog(session, seconds: 60) { entry in
+                let content = entry.content ?? ""
+                return content.contains("stub args") && content.contains("reasoning_effort=low")
+                    && content.contains("-m gpt-5")
+            }
+        } catch {
+            // Say what the hub did log, so a failure can be read from the run.
+            let rows = (try? await client.logs(limit: 12)) ?? []
+            for row in rows {
+                report("E2E-DEBUG \(row.agent ?? "-") \(row.source ?? "-") \(String((row.content ?? "").prefix(200)))")
+            }
+            throw error
         }
         XCTAssertNotNil(entry.id)
         report("E2E-PASS model and effort reached the agent over iroh")

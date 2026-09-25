@@ -224,12 +224,19 @@ final class AgnViewE2ETests: XCTestCase {
         send.tap()
         need("composer-result", timeout: 40)
         XCTAssertTrue(element("composer-result").label.contains("Agent: Codex"))
+        // Close the keyboard so the console log has room to show its rows.
         let done = element("keyboard-done")
-        if done.exists { done.tap() }
+        if done.waitForExistence(timeout: 5) { done.tap() }
         let row = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == 'console-row' AND label CONTAINS 'reasoning_effort=low'"))
             .firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 90), "the agent never printed the effort it was given")
+        if !row.waitForExistence(timeout: 90) {
+            let seen = app.descendants(matching: .any).matching(identifier: "console-row")
+                .allElementsBoundByIndex.suffix(6).map { String($0.label.prefix(160)) }
+            snap("failure-console-rows")
+            XCTFail("the agent never printed the effort it was given. Last rows: \(seen)")
+            return
+        }
         XCTAssertTrue(row.label.contains("-m gpt-5"), "the agent was not given the chosen model: \(row.label)")
         snap("model-effort-reply")
     }
