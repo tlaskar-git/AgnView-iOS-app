@@ -4,7 +4,7 @@ import Foundation
 struct DispatchUnavailable: Error, Equatable, LocalizedError {
     let message: String
 
-    init(message: String = UserMessages.dispatchNeedsLAN) {
+    init(message: String) {
         self.message = message
     }
 

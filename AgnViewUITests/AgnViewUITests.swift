@@ -8,6 +8,18 @@ final class AgnViewUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
+        // Dismiss system alerts such as the camera permission prompt so they
+        // never cover the screenshots.
+        addUIInterruptionMonitor(withDescription: "System alert") { alert in
+            for label in ["Don\u{2019}t Allow", "Don't Allow", "Not Now", "Cancel", "OK", "Allow"] {
+                let button = alert.buttons[label]
+                if button.exists {
+                    button.tap()
+                    return true
+                }
+            }
+            return false
+        }
     }
 
     override func tearDownWithError() throws {
@@ -36,7 +48,24 @@ final class AgnViewUITests: XCTestCase {
         XCTAssertTrue(element(id).waitForExistence(timeout: timeout), "\(id) missing")
     }
 
+    /// Closes a system alert (such as the camera permission prompt) that is
+    /// still on screen, because the interruption monitor only runs on a tap.
+    private func dismissSystemAlert() {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let alert = springboard.alerts.firstMatch
+        guard alert.waitForExistence(timeout: 2) else { return }
+        for label in ["Don\u{2019}t Allow", "Don't Allow", "Not Now", "Cancel", "OK", "Allow"] {
+            let button = alert.buttons[label]
+            if button.exists {
+                button.tap()
+                break
+            }
+        }
+        Thread.sleep(forTimeInterval: 1)
+    }
+
     private func snap(_ name: String) {
+        dismissSystemAlert()
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.name = "\(device)-\(name)"
         shot.lifetime = .keepAlways
@@ -122,6 +151,7 @@ final class AgnViewUITests: XCTestCase {
     func testOffLANConsoleComposer() throws {
         launch(state: "iroh")
         open("Console")
+        need("banner-not-on-network")
         need("composer-notice")
         need("console-log")
         snap("state-composer-disabled")
@@ -171,6 +201,7 @@ final class AgnViewUITests: XCTestCase {
     func testRelayOnlyState() throws {
         launch(state: "relayOnly")
         need("banner-relay-only")
+        need("banner-scan-again")
         snap("state-relayOnly")
     }
 

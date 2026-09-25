@@ -154,8 +154,8 @@ struct ConsoleComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if model.connection.isOnline && !model.canDispatch {
-                Text(UserMessages.dispatchNeedsLAN)
+            if let notice = model.dispatchNotice {
+                Text(notice)
                     .font(.footnote)
                     .foregroundStyle(Theme.warning)
                     .fixedSize(horizontal: false, vertical: true)

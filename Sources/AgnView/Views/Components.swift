@@ -210,8 +210,20 @@ struct ScreenChrome<Content: View>: View {
         AdaptiveStack {
             VStack(alignment: .leading, spacing: Theme.spacing) {
                 header
-                if model.relayOnly {
-                    Banner(kind: .warning, text: UserMessages.relayOnlyBanner, identifier: "banner-relay-only")
+                if let reason = model.lanUnavailableReason {
+                    switch reason {
+                    case .pairedWithoutLAN:
+                        VStack(alignment: .leading, spacing: 8) {
+                            Banner(kind: .warning, text: UserMessages.pairedWithoutLANBanner,
+                                   identifier: "banner-relay-only")
+                            Button("Scan the QR code again") { nav.showPairing = true }
+                                .frame(minHeight: Theme.minTap)
+                                .accessibilityIdentifier("banner-scan-again")
+                        }
+                    case .notOnSameNetwork:
+                        Banner(kind: .warning, text: UserMessages.notOnSameNetworkBanner,
+                               identifier: "banner-not-on-network")
+                    }
                 }
                 if let notice = model.notice {
                     HStack(alignment: .top) {
