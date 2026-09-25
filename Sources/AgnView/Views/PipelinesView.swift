@@ -115,8 +115,17 @@ struct PipelinesView: View {
                 }
             }
             .padding(.bottom, 16)
-            .navigationDestination(item: $opened) { item in
-                JobDetailView(jobId: item.id)
+            .background {
+                // Opens the new pipeline. A link rather than a navigation
+                // destination, so it also works in the iPad detail column.
+                NavigationLink(isActive: Binding(get: { opened != nil },
+                                                 set: { if !$0 { opened = nil } })) {
+                    if let opened { JobDetailView(jobId: opened.id) }
+                } label: {
+                    EmptyView()
+                }
+                .hidden()
+                .accessibilityHidden(true)
             }
         }
         .sheet(isPresented: $showNew) {

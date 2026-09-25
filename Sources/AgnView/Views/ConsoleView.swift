@@ -208,6 +208,13 @@ struct ConsoleComposer: View {
         AgentOption(id: "deepseek", name: "DeepSeek"),
     ]
 
+    /// The room the floating keyboard bar needs. Older systems draw the bar
+    /// inside the keyboard area, so they need none.
+    static var keyboardBarClearance: CGFloat {
+        if #available(iOS 26, *) { return 56 }
+        return 0
+    }
+
     private var trimmed: String { prompt.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var sending: Bool { model.dispatchState?.isLoading ?? false }
     private var canSend: Bool { model.canDispatch && !trimmed.isEmpty && !sending }
@@ -326,6 +333,11 @@ struct ConsoleComposer: View {
         }
         .disabled(!model.canDispatch)
         .card()
+        // On iOS 26 the keyboard bar floats above the keyboard instead of
+        // being part of it, so it would sit over Send. Lift the composer by
+        // the height of the bar while the field has focus.
+        .padding(.bottom, focused ? ConsoleComposer.keyboardBarClearance : 0)
+        .animation(.easeOut(duration: 0.2), value: focused)
         .sheet(isPresented: $showAttach) {
             AttachSheet(attachments: $attachments)
                 .environmentObject(model)

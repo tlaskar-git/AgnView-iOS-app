@@ -10,7 +10,8 @@ struct LANAPITransport: APITransport {
         if let mark = path.firstIndex(of: "?") {
             route = String(path[..<mark])
             var components = URLComponents()
-            components.query = String(path[path.index(after: mark)...])
+            // The query in a path is already percent encoded.
+            components.percentEncodedQuery = String(path[path.index(after: mark)...])
             query = components.queryItems ?? []
         }
         // The hub reads every provider again for a usage refresh, which takes

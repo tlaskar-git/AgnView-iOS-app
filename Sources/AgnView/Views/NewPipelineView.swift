@@ -67,6 +67,7 @@ struct NewPipelineView: View {
             }
         }
         .presentationDetents([.large])
+        .modifier(FullHeightSheet())
         .interactiveDismissDisabled(draft.isDirty)
         .accessibilityIdentifier("new-pipeline")
     }
@@ -320,5 +321,17 @@ private struct FormLabel: View {
             .font(.footnote.weight(.semibold))
             .foregroundStyle(Theme.textSecondary)
             .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// Makes a sheet fill the screen height on iPad, where a sheet is a narrow
+/// form by default. iPhone sheets are full height already.
+struct FullHeightSheet: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.presentationSizing(.page)
+        } else {
+            content
+        }
     }
 }
