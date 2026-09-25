@@ -56,6 +56,11 @@ struct PipelinesView: View {
                 if let notice = model.jobsNotice {
                     Banner(kind: .info, text: notice, identifier: "pipelines-notice")
                 }
+                if let message = model.jobsState.failureMessage {
+                    PanelErrorCard(message: message, prefix: "pipelines") {
+                        Task { await model.retryJobs() }
+                    }
+                }
                 if model.jobs.isEmpty {
                     Text(model.jobsNotice == nil ? "No pipelines yet." : "No pipeline reading on this connection.")
                         .font(.body)

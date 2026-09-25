@@ -288,6 +288,82 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(json["prompt"] as? String, "Example prompt")
     }
 
+    // MARK: Panel isolation
+
+    private func answering(garbage path: String, status: Int = 200) {
+        let good = StubURLProtocol.handler
+        StubURLProtocol.handler = { request in
+            if request.url.path == path { return .response(status, Data("<<not json>>".utf8)) }
+            return good?(request) ?? .response(404, Data())
+        }
+    }
+
+    func testUsageDecodeFailureFailsOnlyTheUsagePanel() async {
+        answering(garbage: "/api/usage/accounts")
+        let session = ScriptedSession(route: .lan)
+        let model = makeModel(lan: TransportScript([TransportScript.session(session)]))
+        await pairAndConnect(model, lanSession: session)
+        await model.refreshUsage()
+        await model.refreshJobs()
+        await model.refreshSessions()
+        XCTAssertEqual(model.usageState, .failed("Usage could not be read. Tap Retry."))
+        XCTAssertEqual(model.connection, .online(.lan, lanCaps))
+        XCTAssertNotNil(model.jobsState.value)
+        XCTAssertNotNil(model.sessionsState.value)
+        XCTAssertEqual(model.jobs.count, 1)
+        XCTAssertNil(model.notice)
+    }
+
+    func testServerErrorFailsThePanelNotTheConnection() async {
+        answering(garbage: "/api/jobs", status: 500)
+        let session = ScriptedSession(route: .lan)
+        let model = makeModel(lan: TransportScript([TransportScript.session(session)]))
+        await pairAndConnect(model, lanSession: session)
+        await model.refreshJobs()
+        XCTAssertEqual(model.jobsState, .failed("Pipelines could not be read. Tap Retry."))
+        XCTAssertEqual(model.connection, .online(.lan, lanCaps))
+    }
+
+    func testRetryRecoversAFailedPanel() async {
+        answering(garbage: "/api/usage/accounts")
+        let session = ScriptedSession(route: .lan)
+        let model = makeModel(lan: TransportScript([TransportScript.session(session)]))
+        await pairAndConnect(model, lanSession: session)
+        await model.refreshUsage()
+        XCTAssertNotNil(model.usageState.failureMessage)
+        StubURLProtocol.handler = { request in
+            request.url.path == "/api/usage/accounts"
+                ? .response(200, Data(SampleJSON.usage.utf8)) : .response(404, Data())
+        }
+        await model.retryUsage()
+        XCTAssertEqual(model.usageState.value?.accounts.count, 2)
+        XCTAssertNil(model.usageState.failureMessage)
+    }
+
+    func testSendRecordsTheReplyAndAFailureKeepsItInline() async {
+        let session = ScriptedSession(route: .lan)
+        let model = makeModel(lan: TransportScript([TransportScript.session(session)]))
+        await pairAndConnect(model, lanSession: session)
+        XCTAssertNil(model.dispatchState)
+        let ok = await model.send(agent: "codex", prompt: "Example prompt")
+        XCTAssertTrue(ok)
+        XCTAssertEqual(model.dispatchState?.value?.status, "dispatched")
+        XCTAssertEqual(model.dispatchState?.value?.sessionId, "sess-1")
+        answering(garbage: "/api/console/dispatch")
+        let failed = await model.send(agent: "codex", prompt: "Example prompt")
+        XCTAssertFalse(failed)
+        XCTAssertNotNil(model.dispatchState?.failureMessage)
+        XCTAssertEqual(model.connection, .online(.lan, lanCaps))
+    }
+
+    func testStatusLineUsesTheTransportLabel() {
+        let status = MobileStatus(status: "ok", service: "AgnView", version: "",
+                                  transportLabel: "LAN", resolvedTransport: "lan")
+        XCTAssertEqual(AppModel.statusText(status), "Connected via LAN: ok")
+        XCTAssertEqual(AppModel.statusText(MobileStatus(status: "ok", service: "x", version: "")),
+                       "Connected: ok")
+    }
+
     func testDispatchTransportFailureIsWrapped() async {
         let session = ScriptedSession(route: .lan)
         let model = makeModel(lan: TransportScript([TransportScript.session(session)]))

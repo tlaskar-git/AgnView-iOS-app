@@ -10,6 +10,11 @@ struct SessionsView: View {
                 if let notice = model.sessionsNotice {
                     Banner(kind: .info, text: notice, identifier: "sessions-notice")
                 }
+                if let message = model.sessionsState.failureMessage {
+                    PanelErrorCard(message: message, prefix: "sessions") {
+                        Task { await model.retrySessions() }
+                    }
+                }
                 if model.sessions.isEmpty {
                     Text("No sessions yet.")
                         .font(.body)

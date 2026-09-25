@@ -1,0 +1,183 @@
+name: e2e-lan
+
+on:
+  pull_request:
+  push:
+    branches:
+      - "bot/p5-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-lan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-lan:
+    name: e2e-lan (real hub)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout app repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout hub repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: tlaskar-git/AgnView
+          ref: main
+          path: hub
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install the hub
+        run: |
+          set +x
+          python -m venv "$RUNNER_TEMP/hubenv"
+          "$RUNNER_TEMP/hubenv/bin/pip" install --quiet ./hub
+          "$RUNNER_TEMP/hubenv/bin/agnview" --help > /dev/null
+
+      - name: Generate a masked token
+        run: |
+          set -euo pipefail
+          TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          echo "::add-mask::$TOKEN"
+          {
+            echo "HUB_TOKEN=$TOKEN"
+            echo "HUB_BIN=$RUNNER_TEMP/hubenv/bin/agnview"
+          } >> "$GITHUB_ENV"
+
+      - name: Create stub agent commands
+        run: |
+          set +x
+          mkdir -p "$RUNNER_TEMP/stubs"
+          for name in claude; do
+            printf '#!/bin/sh\necho "stub agent line one"\necho "stub agent line two"\necho "stub agent line three"\nexit 0\n' > "$RUNNER_TEMP/stubs/$name"
+            chmod +x "$RUNNER_TEMP/stubs/$name"
+          done
+
+      - name: Start the real hub on loopback
+        run: |
+          set +x
+          sh Tools/contract/start_hub.sh e2e
+
+      - name: Seed the hub through its API
+        run: |
+          set +x
+          base="http://127.0.0.1:$HUB_PORT"
+          post() {
+            curl -sS -o /dev/null -w "%{http_code}\n" -X POST -H "X-AgnView-Token: $HUB_TOKEN" \
+              -H "Content-Type: application/json" --max-time 60 -d "$2" "$base$1" || true
+          }
+          post /api/jobs '{"id":"job-e2e-a","title":"End to end pipeline","description":"Seeded for the UI test","tasks":[{"id":"e2e-build","title":"Build","assigned_agent":"claude_code"},{"id":"e2e-review","title":"Review","assigned_agent":"codex","dependencies":["e2e-build"]}]}'
+          post /api/tasks/e2e-build/claim '{"agent":"claude_code"}'
+          post /api/tasks/e2e-build/complete '{"summary":"Built it","artifacts":[]}'
+          post /api/usage/accounts '{"provider":"claude","name":"E2E claude","auth_type":"session_token"}'
+          curl -sS -H "X-AgnView-Token: $HUB_TOKEN" --max-time 30 "$base/api/jobs" | python -c 'import json,sys; print("jobs:", len(json.load(sys.stdin)))'
+
+      - name: Start the fault proxy
+        run: |
+          set +x
+          proxy_port="$(python -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
+          nohup python Tools/e2e/fault_proxy.py --listen "$proxy_port" --upstream "$HUB_PORT" \
+            --break /api/usage/accounts > "$RUNNER_TEMP/proxy.log" 2>&1 &
+          echo "PROXY_PID=$!" >> "$GITHUB_ENV"
+          echo "PROXY_PORT=$proxy_port" >> "$GITHUB_ENV"
+          for i in $(seq 1 20); do
+            code="$(curl -s -o /dev/null -w '%{http_code}' -H "X-AgnView-Token: $HUB_TOKEN" "http://127.0.0.1:$proxy_port/api/mobile/status" || true)"
+            if [ "$code" = "200" ]; then echo "proxy ready"; break; fi
+            sleep 1
+          done
+          test "$code" = "200"
+          usage="$(curl -s -H "X-AgnView-Token: $HUB_TOKEN" "http://127.0.0.1:$proxy_port/api/usage/accounts")"
+          test "$usage" = "<<this is not json>>"
+          echo "proxy breaks usage as intended"
+
+      - name: Install XcodeGen
+        run: |
+          set +x
+          brew install xcodegen
+
+      - name: Generate project
+        run: |
+          set +x
+          xcodegen generate
+
+      - name: Pick simulator
+        id: sim
+        run: |
+          set +x
+          udid="$(python3 Tools/ci/pick_sim.py iPhone)"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
+      - name: Show the software keyboard
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          set +x
+          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b || true
+
+      - name: Resolve packages
+        run: |
+          set +x
+          xcodebuild -resolvePackageDependencies -scheme AgnView
+
+      - name: Run the end-to-end UI tests
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          set +x
+          export TEST_RUNNER_AGNVIEW_E2E=1
+          export TEST_RUNNER_AGNVIEW_MOCK_HUB_URL="http://127.0.0.1:$HUB_PORT"
+          export TEST_RUNNER_AGNVIEW_E2E_PROXY_URL="http://127.0.0.1:$PROXY_PORT"
+          export TEST_RUNNER_AGNVIEW_E2E_KEY="$HUB_TOKEN"
+          xcodebuild test \
+            -scheme AgnView \
+            -destination "platform=iOS Simulator,id=$UDID" \
+            -only-testing:AgnViewUITests/AgnViewE2ETests \
+            -resultBundlePath "$RUNNER_TEMP/e2e.xcresult" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY="-"
+
+      - name: Export screenshots
+        if: always()
+        run: |
+          set +x
+          mkdir -p "$RUNNER_TEMP/e2e-shots"
+          if [ -d "$RUNNER_TEMP/e2e.xcresult" ]; then
+            xcrun xcresulttool export attachments \
+              --path "$RUNNER_TEMP/e2e.xcresult" \
+              --output-path "$RUNNER_TEMP/e2e-attachments"
+            python3 Tools/e2e/export_shots.py "$RUNNER_TEMP/e2e-attachments" "$RUNNER_TEMP/e2e-shots"
+          else
+            echo "no result bundle found"
+          fi
+          ls -1 "$RUNNER_TEMP/e2e-shots"
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-lan-screenshots
+          path: |
+            ${{ runner.temp }}/e2e-shots/*.png
+            ${{ runner.temp }}/e2e-shots/summary.txt
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Stop the proxy and the hub
+        if: always()
+        run: |
+          set +x
+          kill "$PROXY_PID" 2> /dev/null || true
+          kill "$HUB_PID" 2> /dev/null || true

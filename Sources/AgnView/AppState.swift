@@ -3,7 +3,12 @@ import Foundation
 #if DEBUG
 /// Debug-only test hub support. Release builds never read the variable.
 enum MockHub {
-    static let pairingKey = "test-key-not-real"
+    /// The key the mock hub accepts. AGNVIEW_E2E_KEY replaces it when a test
+    /// run points the app at a real hub. The value is never printed or stored.
+    static let pairingKey: String = {
+        let value = ProcessInfo.processInfo.environment["AGNVIEW_E2E_KEY"] ?? ""
+        return value.isEmpty ? "test-key-not-real" : value
+    }()
 
     static var baseURL: URL? {
         guard let value = ProcessInfo.processInfo.environment["AGNVIEW_MOCK_HUB_URL"],
