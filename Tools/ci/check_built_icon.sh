@@ -17,10 +17,13 @@ python3 "$(dirname "$0")/check_icon.py" "$source_icon" || failed=1
 icon_name="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIconName" "$plist" 2> /dev/null || true)"
 icon_dict="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIcons" "$plist" 2> /dev/null || true)"
 echo "CFBundleIconName: ${icon_name:-<missing>}"
-if [ -z "$icon_name" ] && [ -z "$icon_dict" ]; then
-  echo "FAIL icon: the built Info.plist has neither CFBundleIconName nor CFBundleIcons"
+if [ "$icon_name" != "AppIcon" ]; then
+  echo "FAIL icon: the built Info.plist must name the AppIcon asset in CFBundleIconName"
   failed=1
 fi
+echo "CFBundleIcons present: $([ -n "$icon_dict" ] && echo yes || echo no)"
+# Icon related keys, names only, to show what App Store Connect will read.
+plutil -p "$plist" 2> /dev/null | grep -i "icon" | sed 's/^ *//' | cut -c1-120 || true
 
 if [ ! -f "$app/Assets.car" ]; then
   echo "FAIL icon: the built app has no Assets.car"
