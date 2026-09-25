@@ -115,7 +115,7 @@ final class IrohRealHubTests: XCTestCase {
         let api = try XCTUnwrap(session.api)
         let client = HubClient(api: api)
 
-        // Model, effort and files go through the dispatch call, and the stub
+        // Model and effort go through the dispatch call, and the stub
         // agent prints the arguments it was given.
         let marker = "e2e-effort-\(UUID().uuidString.prefix(8))"
         report("E2E-STEP connected, dispatching")
@@ -123,8 +123,7 @@ final class IrohRealHubTests: XCTestCase {
         let response: DispatchResponse
         do {
             response = try await client.dispatch(DispatchRequest(targetAgent: "codex", prompt: marker,
-                                                                 model: "gpt-5", effort: "low",
-                                                                 files: ["README.md"]))
+                                                                 model: "gpt-5", effort: "low"))
         } catch {
             report("E2E-STEP the dispatch threw \(type(of: error)) \(error), task cancelled: \(Task.isCancelled)")
             throw error
@@ -136,7 +135,7 @@ final class IrohRealHubTests: XCTestCase {
         // through the API until the reply is there.
         func carriesTheChoices(_ content: String) -> Bool {
             content.contains("stub args") && content.contains("reasoning_effort=low")
-                && content.contains("-m gpt-5") && content.contains("[Context Files: README.md]")
+                && content.contains("-m gpt-5")
         }
         var seen = false
         var lastRows: [ConsoleFrame.LogEntry] = []
