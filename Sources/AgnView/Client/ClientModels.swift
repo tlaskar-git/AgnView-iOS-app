@@ -400,6 +400,7 @@ enum HubJSON {
         do {
             return try decoder().decode(type, from: data)
         } catch {
+            HubLog.decodeFailure(type, error)
             throw TransportError.protocolViolation
         }
     }

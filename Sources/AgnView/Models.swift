@@ -20,12 +20,20 @@ struct UsageAccount: Codable, Equatable, Identifiable {
     let weeklyPercentUsed: Double?
     /// Why the hub could not measure this account, when it says.
     let errorMessage: String?
+    /// False when the hub sent null: the figure is not measured, not zero.
+    let hasTokens: Bool
+    let hasCost: Bool
+    let hasRequests: Bool
 
     init(id: String, name: String, provider: String, planName: String?, tokensUsed: Int,
          tokensLimit: Int?, costUsed: Double, costLimit: Double?, requestsCount: Int,
          lastProbed: String?, isActive: Bool, status: String? = nil, planLabel: String? = nil,
          percentUsed: Double? = nil, sessionPercentUsed: Double? = nil,
-         weeklyPercentUsed: Double? = nil, errorMessage: String? = nil) {
+         weeklyPercentUsed: Double? = nil, errorMessage: String? = nil,
+         hasTokens: Bool = true, hasCost: Bool = true, hasRequests: Bool = true) {
+        self.hasTokens = hasTokens
+        self.hasCost = hasCost
+        self.hasRequests = hasRequests
         self.id = id
         self.name = name
         self.provider = provider
@@ -68,11 +76,17 @@ struct UsageAccount: Codable, Equatable, Identifiable {
         name = c.lenientString(forKey: .name) ?? provider
         planName = c.lenientString(forKey: .planName)
         planLabel = c.lenientString(forKey: .planLabel)
-        tokensUsed = c.lenientInt(forKey: .tokensUsed) ?? 0
+        let tokens = c.lenientInt(forKey: .tokensUsed)
+        let cost = c.lenientDouble(forKey: .costUsedUsd) ?? c.lenientDouble(forKey: .costUsed)
+        let requests = c.lenientInt(forKey: .requestsUsed) ?? c.lenientInt(forKey: .requestsCount)
+        tokensUsed = tokens ?? 0
+        hasTokens = tokens != nil
         tokensLimit = c.lenientInt(forKey: .tokensLimit)
-        costUsed = c.lenientDouble(forKey: .costUsedUsd) ?? c.lenientDouble(forKey: .costUsed) ?? 0
+        costUsed = cost ?? 0
+        hasCost = cost != nil
         costLimit = c.lenientDouble(forKey: .costLimitUsd) ?? c.lenientDouble(forKey: .costLimit)
-        requestsCount = c.lenientInt(forKey: .requestsUsed) ?? c.lenientInt(forKey: .requestsCount) ?? 0
+        requestsCount = requests ?? 0
+        hasRequests = requests != nil
         lastProbed = c.lenientString(forKey: .lastChecked) ?? c.lenientString(forKey: .lastProbed)
         self.status = status
         isActive = c.lenientBool(forKey: .isActive) ?? (status == "active" || status == "warning")
@@ -89,11 +103,11 @@ struct UsageAccount: Codable, Equatable, Identifiable {
         try c.encode(provider, forKey: .provider)
         try c.encodeIfPresent(planName, forKey: .planName)
         try c.encodeIfPresent(planLabel, forKey: .planLabel)
-        try c.encode(tokensUsed, forKey: .tokensUsed)
+        if hasTokens { try c.encode(tokensUsed, forKey: .tokensUsed) }
         try c.encodeIfPresent(tokensLimit, forKey: .tokensLimit)
-        try c.encode(costUsed, forKey: .costUsed)
+        if hasCost { try c.encode(costUsed, forKey: .costUsed) }
         try c.encodeIfPresent(costLimit, forKey: .costLimit)
-        try c.encode(requestsCount, forKey: .requestsCount)
+        if hasRequests { try c.encode(requestsCount, forKey: .requestsCount) }
         try c.encodeIfPresent(lastProbed, forKey: .lastProbed)
         try c.encode(isActive, forKey: .isActive)
         try c.encodeIfPresent(status, forKey: .status)

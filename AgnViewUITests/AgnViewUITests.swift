@@ -184,18 +184,58 @@ final class AgnViewUITests: XCTestCase {
         launch(state: "offline")
         need("state-offline")
         snap("state-offline")
+        leaveThroughSettings("state-offline")
     }
 
     func testAuthFailedState() throws {
         launch(state: "authFailed")
         need("state-authFailed")
         snap("state-authFailed")
+        leaveThroughSettings("state-authFailed")
     }
 
     func testKeyRevokedState() throws {
         launch(state: "keyRevoked")
         need("state-keyRevoked")
         snap("state-keyRevoked")
+        leaveThroughSettings("state-keyRevoked")
+    }
+
+    /// A full-screen state never traps the user: the Switch machine button and
+    /// the tab bar both reach Settings, where the machines can be changed.
+    private func leaveThroughSettings(_ state: String) {
+        let button = element(state + "-settings")
+        need(state + "-settings")
+        button.tap()
+        need("screen-settings")
+        need("machine-row")
+        need("add-machine")
+        open("Console")
+        need(state)
+        open("Settings")
+        need("machine-row")
+    }
+
+    /// The composer sends against the mock hub and shows the reply inline.
+    func testComposerSendsAndClosesTheKeyboard() throws {
+        launch(mock: true)
+        open("Console")
+        let prompt = element("composer-prompt")
+        XCTAssertTrue(prompt.waitForExistence(timeout: 30))
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"),
+                                                object: prompt)
+        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed)
+        prompt.tap()
+        prompt.typeText("Example prompt")
+        element("composer-send").tap()
+        need("composer-result", timeout: 30)
+        let done = element("keyboard-done")
+        if done.waitForExistence(timeout: 5) {
+            done.tap()
+            let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
+                                                   object: app.keyboards.firstMatch)
+            XCTAssertEqual(XCTWaiter().wait(for: [closed], timeout: 10), .completed)
+        }
     }
 
     func testRelayOnlyState() throws {

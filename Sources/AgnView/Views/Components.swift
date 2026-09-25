@@ -118,6 +118,9 @@ struct StateView: View {
     let primary: () -> Void
     var secondaryTitle: String?
     var secondary: (() -> Void)?
+    /// Always offered, so no state can trap the user away from Settings.
+    var settingsTitle = "Switch machine"
+    var settings: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 16) {
@@ -146,12 +149,43 @@ struct StateView: View {
                     .controlSize(.large)
                     .accessibilityIdentifier(identifier + "-secondary")
             }
+            if let settings {
+                Button(settingsTitle, action: settings)
+                    .frame(minHeight: Theme.minTap)
+                    .accessibilityIdentifier(identifier + "-settings")
+            }
         }
         .padding(24)
         .frame(maxWidth: .infinity)
         .card()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(identifier)
+    }
+}
+
+/// The message a panel shows when its own request failed, with Retry. The
+/// identifiers are prefix-error, prefix-error-text and prefix-retry.
+struct PanelErrorCard: View {
+    let message: String
+    let prefix: String
+    let retry: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Banner(kind: .error, text: message, identifier: prefix + "-error")
+            Button("Retry", action: retry)
+                .buttonStyle(.bordered)
+                .frame(minHeight: Theme.minTap)
+                .accessibilityIdentifier(prefix + "-retry")
+        }
+    }
+}
+
+enum Keyboard {
+    /// Closes the keyboard from anywhere.
+    static func dismiss() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                        to: nil, from: nil, for: nil)
     }
 }
 
@@ -235,10 +269,12 @@ struct ScreenChrome<Content: View>: View {
                 }
                 if gate != .none {
                     ScrollView { gateView }
+                        .scrollDismissesKeyboard(.interactively)
                 } else if scrolls {
                     ScrollView {
                         content.frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    .scrollDismissesKeyboard(.interactively)
                 } else {
                     content.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -273,28 +309,33 @@ struct ScreenChrome<Content: View>: View {
                       primaryTitle: "Scan QR code",
                       primary: { nav.showPairing = true },
                       secondaryTitle: "Paste pairing link",
-                      secondary: { nav.showPairing = true })
+                      secondary: { nav.showPairing = true },
+                      settingsTitle: "Settings",
+                      settings: { nav.screen = .settings })
         case .offline:
             StateView(symbol: "wifi.slash",
                       title: "Hub offline",
                       message: UserMessages.offlineHub,
                       identifier: "state-offline",
                       primaryTitle: "Retry",
-                      primary: { model.retry() })
+                      primary: { model.retry() },
+                      settings: { nav.screen = .settings })
         case .authFailed:
             StateView(symbol: "lock.slash",
                       title: "Pairing rejected",
                       message: UserMessages.authFailed,
                       identifier: "state-authFailed",
                       primaryTitle: "Scan again",
-                      primary: { nav.showPairing = true })
+                      primary: { nav.showPairing = true },
+                      settings: { nav.screen = .settings })
         case .keyRevoked:
             StateView(symbol: "key",
                       title: "Key changed",
                       message: UserMessages.keyRevoked,
                       identifier: "state-keyRevoked",
                       primaryTitle: "Pair again",
-                      primary: { nav.showPairing = true })
+                      primary: { nav.showPairing = true },
+                      settings: { nav.screen = .settings })
         case .none:
             EmptyView()
         }

@@ -70,6 +70,12 @@ final class AppModel: ObservableObject {
     @Published private(set) var usageSnapshot: UsageSnapshot?
     @Published private(set) var jobs: [Job] = []
     @Published private(set) var statusLine = "No hub connected"
+    /// One state per panel. A failed read shows in its panel only.
+    @Published private(set) var usageState: PanelState<UsageSnapshot> = .loading
+    @Published private(set) var jobsState: PanelState<[Job]> = .loading
+    @Published private(set) var sessionsState: PanelState<[SessionInfo]> = .loading
+    /// The last console send. Nil before the first send.
+    @Published private(set) var dispatchState: PanelState<DispatchResponse>?
     @Published var pairingResult: PairingResult = .idle
     /// A one-off message for the screens, such as the removal note.
     @Published var notice: String?
@@ -312,28 +318,101 @@ final class AppModel: ObservableObject {
         return response
     }
 
+    /// Sends a prompt and records the result in dispatchState. Returns true on
+    /// success. A failure shows inline in the composer and nowhere else.
+    @discardableResult
+    func send(agent: String, prompt: String) async -> Bool {
+        if case .loading = dispatchState { return false }
+        dispatchState = .loading
+        do {
+            let response = try await dispatch(agent: agent, prompt: prompt)
+            dispatchState = .loaded(response)
+            return true
+        } catch {
+            dispatchState = .failed(error.localizedDescription)
+            return false
+        }
+    }
+
+    func clearDispatchResult() {
+        if case .loading = dispatchState { return }
+        dispatchState = nil
+    }
+
+    /// The failure message for a panel, or nil when the connection layer
+    /// already handles the error (401 and the rate limit) and the panel keeps
+    /// what it has. Never touches the connection state.
+    private func panelFailure(_ error: Error, panel: String) -> String? {
+        switch TransportError.normalise(error) {
+        case .unauthorised, .rateLimited: return nil
+        default: return PanelMessages.couldNotRead(panel)
+        }
+    }
+
+    /// The Retry buttons: show loading again, then read once more.
+    func retryUsage() async {
+        usageState = usageState.retrying()
+        await refreshUsage()
+    }
+
+    func retryJobs() async {
+        jobsState = jobsState.retrying()
+        await refreshJobs()
+    }
+
+    func retrySessions() async {
+        sessionsState = sessionsState.retrying()
+        await refreshSessions()
+    }
+
     func refreshUsage() async {
-        guard usageIsLive, let client else { return }
+        guard usageIsLive, let client else {
+            if let snapshot = usageSnapshot { usageState = usageState.markedStale(since: snapshot.takenAt) }
+            return
+        }
         let gen = generation
-        guard let accounts = try? await client.usageAccounts(), gen == generation else { return }
-        usageSnapshot = UsageSnapshot(accounts: accounts, takenAt: now())
+        do {
+            let accounts = try await client.usageAccounts()
+            guard gen == generation else { return }
+            let snapshot = UsageSnapshot(accounts: accounts, takenAt: now())
+            usageSnapshot = snapshot
+            usageState = .loaded(snapshot)
+        } catch {
+            guard gen == generation, let message = panelFailure(error, panel: "Usage") else { return }
+            usageState = .failed(message)
+        }
     }
 
     func refreshJobs() async {
         guard jobsAreLive, let client else { return }
         let gen = generation
-        guard let list = try? await client.jobs(), gen == generation else { return }
-        jobs = list
+        do {
+            let list = try await client.jobs()
+            guard gen == generation else { return }
+            jobs = list
+            jobsState = .loaded(list)
+        } catch {
+            guard gen == generation, let message = panelFailure(error, panel: "Pipelines") else { return }
+            jobsState = .failed(message)
+        }
     }
 
     func refreshSessions() async {
         guard connection.isOnline, capabilities.contains(.sessions), let client else { return }
         let gen = generation
-        guard let live = try? await client.liveSessions(), gen == generation else { return }
-        sessions = live.map {
-            SessionInfo(id: $0.sessionId, agent: $0.agent, workingDirectory: $0.workingDirectory,
-                        busy: $0.busy, idleSeconds: $0.idleSeconds, lastActivity: nil,
-                        lineCount: 0, fromLog: false)
+        do {
+            let live = try await client.liveSessions()
+            guard gen == generation else { return }
+            let mapped = live.map {
+                SessionInfo(id: $0.sessionId, agent: $0.agent, workingDirectory: $0.workingDirectory,
+                            busy: $0.busy, idleSeconds: $0.idleSeconds, lastActivity: nil,
+                            lineCount: 0, fromLog: false)
+            }
+            sessions = mapped
+            sessionsState = .loaded(mapped)
+        } catch {
+            guard gen == generation, let message = panelFailure(error, panel: "Sessions") else { return }
+            sessionsState = .failed(message)
         }
     }
 
@@ -354,6 +433,10 @@ final class AppModel: ObservableObject {
         sessions = []
         usageSnapshot = nil
         jobs = []
+        usageState = .loading
+        jobsState = .loading
+        sessionsState = .loading
+        dispatchState = nil
         statusLine = "No hub connected"
     }
 
@@ -460,14 +543,24 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// The real hub sends a transport label and no service or version.
+    static func statusText(_ status: MobileStatus) -> String {
+        let label = [status.transportLabel, status.resolvedTransport]
+            .compactMap { $0 }.first { !$0.isEmpty }
+        if let label { return "Connected via \(label): \(status.status)" }
+        return "Connected: \(status.status)"
+    }
+
     private func refreshAll(generation gen: Int) async {
         guard let client else { return }
-        if let status = try? await client.status(), gen == generation {
-            statusLine = "\(status.service) \(status.version): \(status.status)"
-        }
+        // The status call comes last: the real hub can take seconds to answer
+        // it, and the panels must not wait for it.
         await refreshSessions()
         await refreshUsage()
         await refreshJobs()
+        if let status = try? await client.status(), gen == generation {
+            statusLine = Self.statusText(status)
+        }
     }
 
     /// Reads frames until the stream ends or fails. A silent stream ends after
@@ -658,7 +751,9 @@ extension AppModel {
                                            planName: "Example plan", tokensUsed: 120000, tokensLimit: 500000,
                                            costUsed: 12.5, costLimit: 100.0, requestsCount: 42,
                                            lastProbed: nil, isActive: true)
-                usageSnapshot = UsageSnapshot(accounts: [account], takenAt: now().addingTimeInterval(-300))
+                let snapshot = UsageSnapshot(accounts: [account], takenAt: now().addingTimeInterval(-300))
+                usageSnapshot = snapshot
+                usageState = .stale(snapshot, since: snapshot.takenAt)
             }
         }
         return true

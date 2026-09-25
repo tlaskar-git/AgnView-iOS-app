@@ -90,8 +90,13 @@ final class LANTransport: Transport {
         try await get("/api/mobile/status")
     }
 
+    /// The ladder races connect against 800 ms. The real hub can take seconds
+    /// to answer /api/mobile/status, so the check that the hub is there and
+    /// the key is accepted reads one log row instead. It answers in
+    /// milliseconds and a wrong key still gives 401.
     func connect() async throws -> HubSession {
-        _ = try await status()
+        _ = try await get(HubPath.consoleLogs, query: [URLQueryItem(name: "agent", value: "all"),
+                                                        URLQueryItem(name: "limit", value: "1")])
         return LANSession(transport: self)
     }
 

@@ -9,11 +9,17 @@ struct UsageView: View {
                 if let notice = model.usageNotice {
                     Banner(kind: .info, text: notice, identifier: "usage-notice")
                 }
+                if let message = model.usageState.failureMessage {
+                    PanelErrorCard(message: message, prefix: "usage") {
+                        Task { await model.retryUsage() }
+                    }
+                }
                 if let snapshot = model.usageSnapshot, !snapshot.accounts.isEmpty {
                     ForEach(snapshot.accounts) { account in
-                        UsageCard(account: account, takenAt: snapshot.takenAt, stale: !model.usageIsLive)
+                        UsageCard(account: account, takenAt: snapshot.takenAt,
+                                  stale: !model.usageIsLive || model.usageState.failureMessage != nil)
                     }
-                } else {
+                } else if model.usageState.failureMessage == nil {
                     Text(model.usageIsLive ? "Reading usage from the hub." : "No usage reading yet.")
                         .font(.body)
                         .foregroundStyle(Theme.textSecondary)
@@ -52,14 +58,35 @@ struct UsageCard: View {
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
+            if account.status != nil || account.errorMessage != nil {
+                VStack(alignment: .leading, spacing: 4) {
+                    if let status = account.status, !status.isEmpty {
+                        StatusPill(text: status.capitalized, tint: statusTint(status))
+                            .accessibilityIdentifier("usage-status")
+                    }
+                    if let message = account.errorMessage, !message.isEmpty {
+                        Text(message)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.error)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("usage-account-error")
+                    }
+                }
+            }
             Metric(title: "Tokens",
-                   value: tokenText,
-                   fraction: Format.fraction(used: Double(account.tokensUsed),
-                                             limit: account.tokensLimit.map { Double($0) }))
+                   value: account.hasTokens ? tokenText : PanelMessages.notMeasured,
+                   fraction: account.hasTokens
+                       ? Format.fraction(used: Double(account.tokensUsed),
+                                         limit: account.tokensLimit.map { Double($0) })
+                       : nil)
             Metric(title: "Cost",
-                   value: costText,
-                   fraction: Format.fraction(used: account.costUsed, limit: account.costLimit))
-            Metric(title: "Requests", value: String(account.requestsCount), fraction: nil)
+                   value: account.hasCost ? costText : PanelMessages.notMeasured,
+                   fraction: account.hasCost
+                       ? Format.fraction(used: account.costUsed, limit: account.costLimit)
+                       : nil)
+            Metric(title: "Requests",
+                   value: account.hasRequests ? String(account.requestsCount) : PanelMessages.notMeasured,
+                   fraction: nil)
             Text(Format.lastReading(from: takenAt, to: Date()))
                 .font(.footnote)
                 .foregroundStyle(Theme.textSecondary)
@@ -68,6 +95,15 @@ struct UsageCard: View {
         .card()
         .opacity(stale ? 0.55 : 1)
         .accessibilityElement(children: .contain)
+    }
+
+    private func statusTint(_ status: String) -> Color {
+        switch status {
+        case "active": return Theme.success
+        case "warning": return Theme.warning
+        case "exhausted", "error": return Theme.error
+        default: return Theme.textSecondary
+        }
     }
 
     private var tokenText: String {

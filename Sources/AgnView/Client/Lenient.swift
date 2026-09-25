@@ -140,6 +140,7 @@ enum HubList {
         if let envelope = try? decoder.decode(Envelope<T>.self, from: data), let list = envelope.list {
             return list
         }
+        HubLog.listFailure(T.self)
         throw TransportError.protocolViolation
     }
 }

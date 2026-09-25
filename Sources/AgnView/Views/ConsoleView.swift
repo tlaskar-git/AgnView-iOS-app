@@ -75,6 +75,8 @@ struct ConsoleLog: View {
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .scrollDismissesKeyboard(.interactively)
+            .simultaneousGesture(TapGesture().onEnded { Keyboard.dismiss() })
             .onChange(of: model.consoleLines.last?.id) { _, newValue in
                 if let newValue {
                     proxy.scrollTo(newValue, anchor: .bottom)
@@ -138,9 +140,7 @@ struct ConsoleComposer: View {
 
     @State private var agent = "claude_code"
     @State private var prompt = ""
-    @State private var sending = false
-    @State private var resultText: String?
-    @State private var errorText: String?
+    @FocusState private var focused: Bool
 
     private let agents: [AgentOption] = [
         AgentOption(id: "claude_code", name: "Claude Code"),
@@ -150,6 +150,7 @@ struct ConsoleComposer: View {
     ]
 
     private var trimmed: String { prompt.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var sending: Bool { model.dispatchState?.isLoading ?? false }
     private var canSend: Bool { model.canDispatch && !trimmed.isEmpty && !sending }
 
     var body: some View {
@@ -180,6 +181,19 @@ struct ConsoleComposer: View {
                     .lineLimit(1...4)
                     .textFieldStyle(.roundedBorder)
                     .frame(minHeight: Theme.minTap)
+                    .focused($focused)
+                    .submitLabel(.send)
+                    .onSubmit { send() }
+                    .toolbar {
+                        ToolbarItemGroup(placement: .keyboard) {
+                            Spacer()
+                            Button("Done") {
+                                focused = false
+                                Keyboard.dismiss()
+                            }
+                            .accessibilityIdentifier("keyboard-done")
+                        }
+                    }
                     .accessibilityIdentifier("composer-prompt")
                 Button("Send") { send() }
                     .buttonStyle(.borderedProminent)
@@ -188,39 +202,46 @@ struct ConsoleComposer: View {
                     .disabled(!canSend)
                     .accessibilityIdentifier("composer-send")
             }
-            if let resultText {
-                Text(resultText)
+            switch model.dispatchState {
+            case .loaded(let response):
+                Text(Self.replyText(response, fallbackAgent: agent))
                     .font(.footnote)
                     .foregroundStyle(Theme.success)
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("composer-result")
-            }
-            if let errorText {
-                Text(errorText)
+            case .failed(let message):
+                Text(message)
                     .font(.footnote)
                     .foregroundStyle(Theme.error)
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("composer-error")
+            default:
+                EmptyView()
             }
         }
         .disabled(!model.canDispatch)
         .card()
     }
 
+    /// The reply shown under the composer: status, agent, session id and the
+    /// hub message, whichever the hub sent.
+    static func replyText(_ response: DispatchResponse, fallbackAgent: String) -> String {
+        var parts: [String] = []
+        if let status = response.status, !status.isEmpty { parts.append("Status: \(status)") }
+        parts.append("Agent: \(Format.agentName(response.agent ?? fallbackAgent))")
+        if let session = response.sessionId, !session.isEmpty { parts.append("Session: \(Format.shortId(session))") }
+        if let message = response.message, !message.isEmpty { parts.append(message) }
+        return parts.joined(separator: "\n")
+    }
+
     private func send() {
         let text = trimmed
         guard canSend else { return }
-        sending = true
-        resultText = nil
-        errorText = nil
         let target = agent
         Task {
-            do {
-                let response = try await model.dispatch(agent: target, prompt: text)
-                resultText = response.message ?? "Sent to \(Format.agentName(target))."
+            if await model.send(agent: target, prompt: text) {
                 prompt = ""
-            } catch {
-                errorText = error.localizedDescription
             }
-            sending = false
         }
     }
 }
