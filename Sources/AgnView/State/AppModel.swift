@@ -553,12 +553,14 @@ final class AppModel: ObservableObject {
 
     private func refreshAll(generation gen: Int) async {
         guard let client else { return }
-        if let status = try? await client.status(), gen == generation {
-            statusLine = Self.statusText(status)
-        }
+        // The status call comes last: the real hub can take seconds to answer
+        // it, and the panels must not wait for it.
         await refreshSessions()
         await refreshUsage()
         await refreshJobs()
+        if let status = try? await client.status(), gen == generation {
+            statusLine = Self.statusText(status)
+        }
     }
 
     /// Reads frames until the stream ends or fails. A silent stream ends after
