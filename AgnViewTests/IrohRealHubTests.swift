@@ -131,6 +131,7 @@ final class IrohRealHubTests: XCTestCase {
             }
         } catch {
             // Say what the hub did log, so a failure can be read from the run.
+            report("E2E-DEBUG the wait ended with \(error)")
             let rows = (try? await client.logs(limit: 12)) ?? []
             for row in rows {
                 report("E2E-DEBUG \(row.agent ?? "-") \(row.source ?? "-") \(String((row.content ?? "").prefix(200)))")

@@ -100,6 +100,7 @@ jobs:
             -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO > "$RUNNER_TEMP/e2e-test.log" 2>&1 || status=$?
           grep -E "Test Case.*(passed|failed|skipped)|Executed|TEST (SUCCEEDED|FAILED)" "$RUNNER_TEMP/e2e-test.log" || true
+          grep -E "error:|threw error" "$RUNNER_TEMP/e2e-test.log" | cut -c1-300 || true
           echo "--- result lines"
           cat "$out"
           test "$status" = "0"
@@ -111,6 +112,12 @@ jobs:
           grep -q "^E2E-PASS LAN only calls refused over iroh" "$out"
           grep -q "^E2E-ROUTE " "$out"
           grep -q "^E2E-PASS dispatch output" "$out"
+
+      - name: Show the hub log tail on failure
+        if: failure()
+        run: |
+          set +x
+          tail -40 "$RUNNER_TEMP/hub-e2e.log" | cut -c1-200 || true
 
       - name: Stop the hub
         if: always()
