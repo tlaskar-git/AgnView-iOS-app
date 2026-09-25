@@ -10,6 +10,10 @@ import os
 import shutil
 import sys
 
+# Five screens, settings with machines, composer disabled, three off-LAN
+# screens, four error states, onboarding and the pairing sheet.
+EXPECTED_PER_DEVICE = 16
+
 
 def main():
     src, out, device = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -32,6 +36,9 @@ def main():
         for name in sorted(copied):
             fh.write(name + "\n")
     print("copied %d screenshots" % len(copied))
+    if len(copied) != EXPECTED_PER_DEVICE:
+        print("expected %d screenshots per device" % EXPECTED_PER_DEVICE)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

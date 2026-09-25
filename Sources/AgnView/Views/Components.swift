@@ -1,0 +1,290 @@
+import SwiftUI
+
+/// Shared state that crosses screens: the selected screen and the pairing sheet.
+@MainActor
+final class NavState: ObservableObject {
+    @Published var screen: Screen = .console
+    @Published var showPairing = false
+}
+
+struct CardStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(Theme.cardPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: Theme.cardRadius).fill(Theme.surface))
+            .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius).stroke(Theme.border, lineWidth: 1))
+    }
+}
+
+extension View {
+    func card() -> some View { modifier(CardStyle()) }
+}
+
+struct Banner: View {
+    enum Kind { case info, warning, error }
+
+    let kind: Kind
+    let text: String
+    let identifier: String
+
+    private var tint: Color {
+        switch kind {
+        case .info: return Theme.action
+        case .warning: return Theme.warning
+        case .error: return Theme.error
+        }
+    }
+
+    private var symbol: String {
+        switch kind {
+        case .info: return "info.circle"
+        case .warning: return "exclamationmark.triangle"
+        case .error: return "xmark.octagon"
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: symbol)
+                .foregroundStyle(tint)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(Theme.textMain)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Theme.cardRadius).fill(tint.opacity(0.12)))
+        .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius).stroke(tint.opacity(0.4), lineWidth: 1))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(identifier)
+    }
+}
+
+struct RoutePill: View {
+    @EnvironmentObject private var model: AppModel
+
+    private var label: String {
+        if case .connecting = model.connection, model.activeHub != nil { return "Connecting" }
+        return model.route.label
+    }
+
+    private var tint: Color {
+        switch model.route {
+        case .lan: return Theme.success
+        case .direct, .relay: return Theme.action
+        case .offline: return Theme.textSecondary
+        }
+    }
+
+    var body: some View {
+        Text(label)
+            .font(.caption.bold())
+            .foregroundStyle(tint)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(tint.opacity(0.15)))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Connection: \(label)")
+            .accessibilityIdentifier("route-pill")
+    }
+}
+
+/// A status pill with a fixed tint.
+struct StatusPill: View {
+    let text: String
+    let tint: Color
+
+    var body: some View {
+        Text(text)
+            .font(.caption.bold())
+            .foregroundStyle(tint)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(tint.opacity(0.15)))
+    }
+}
+
+/// A full-screen state with a message and one or two actions.
+struct StateView: View {
+    let symbol: String
+    let title: String
+    let message: String
+    let identifier: String
+    let primaryTitle: String
+    let primary: () -> Void
+    var secondaryTitle: String?
+    var secondary: (() -> Void)?
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: symbol)
+                .font(.largeTitle)
+                .imageScale(.large)
+                .foregroundStyle(Theme.textSecondary)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.title2.bold())
+                .foregroundStyle(Theme.textMain)
+                .multilineTextAlignment(.center)
+            Text(message)
+                .font(.body)
+                .foregroundStyle(Theme.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(primaryTitle, action: primary)
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.action)
+                .controlSize(.large)
+                .accessibilityIdentifier(identifier + "-primary")
+            if let secondaryTitle, let secondary {
+                Button(secondaryTitle, action: secondary)
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .accessibilityIdentifier(identifier + "-secondary")
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity)
+        .card()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(identifier)
+    }
+}
+
+/// Runs a screen inside a navigation stack on iPhone. On iPad the split view
+/// already provides one.
+struct AdaptiveStack<Content: View>: View {
+    private let content: Content
+
+    init(@ViewBuilder _ content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            content.navigationBarTitleDisplayMode(.inline)
+        } else {
+            NavigationStack {
+                content.toolbar(.hidden, for: .navigationBar)
+            }
+        }
+    }
+}
+
+enum ScreenGate {
+    case none, noHub, offline, authFailed, keyRevoked
+}
+
+/// The frame every screen shares: title, route pill, banners, then either a
+/// full-screen state or the screen content.
+struct ScreenChrome<Content: View>: View {
+    let screen: Screen
+    let scrolls: Bool
+    private let content: Content
+
+    @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var nav: NavState
+
+    init(screen: Screen, scrolls: Bool = true, @ViewBuilder content: () -> Content) {
+        self.screen = screen
+        self.scrolls = scrolls
+        self.content = content()
+    }
+
+    private var gate: ScreenGate {
+        if screen == .settings { return .none }
+        if model.hubs.isEmpty { return .noHub }
+        switch model.connection {
+        case .offline: return .offline
+        case .authFailed: return .authFailed
+        case .keyRevoked: return .keyRevoked
+        default: return .none
+        }
+    }
+
+    var body: some View {
+        AdaptiveStack {
+            VStack(alignment: .leading, spacing: Theme.spacing) {
+                header
+                if model.relayOnly {
+                    Banner(kind: .warning, text: UserMessages.relayOnlyBanner, identifier: "banner-relay-only")
+                }
+                if let notice = model.notice {
+                    HStack(alignment: .top) {
+                        Banner(kind: .info, text: notice, identifier: "banner-notice")
+                        Button("Dismiss") { model.notice = nil }
+                            .frame(minHeight: Theme.minTap)
+                            .accessibilityIdentifier("banner-notice-dismiss")
+                    }
+                }
+                if gate != .none {
+                    ScrollView { gateView }
+                } else if scrolls {
+                    ScrollView {
+                        content.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                } else {
+                    content.frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .padding(.horizontal, Theme.screenPadding)
+            .padding(.top, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(Theme.page.ignoresSafeArea())
+        }
+    }
+
+    private var header: some View {
+        HStack {
+            Text(screen.title)
+                .font(.largeTitle.bold())
+                .foregroundStyle(Theme.textMain)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier(screen.identifier)
+            Spacer()
+            RoutePill()
+        }
+    }
+
+    @ViewBuilder
+    private var gateView: some View {
+        switch gate {
+        case .noHub:
+            StateView(symbol: "qrcode.viewfinder",
+                      title: "Pair your computer",
+                      message: "Open AgnView on your computer, show the pairing QR code, then scan it here.",
+                      identifier: "state-onboarding",
+                      primaryTitle: "Scan QR code",
+                      primary: { nav.showPairing = true },
+                      secondaryTitle: "Paste pairing link",
+                      secondary: { nav.showPairing = true })
+        case .offline:
+            StateView(symbol: "wifi.slash",
+                      title: "Hub offline",
+                      message: UserMessages.offlineHub,
+                      identifier: "state-offline",
+                      primaryTitle: "Retry",
+                      primary: { model.retry() })
+        case .authFailed:
+            StateView(symbol: "lock.slash",
+                      title: "Pairing rejected",
+                      message: UserMessages.authFailed,
+                      identifier: "state-authFailed",
+                      primaryTitle: "Scan again",
+                      primary: { nav.showPairing = true })
+        case .keyRevoked:
+            StateView(symbol: "key",
+                      title: "Key changed",
+                      message: UserMessages.keyRevoked,
+                      identifier: "state-keyRevoked",
+                      primaryTitle: "Pair again",
+                      primary: { nav.showPairing = true })
+        case .none:
+            EmptyView()
+        }
+    }
+}
