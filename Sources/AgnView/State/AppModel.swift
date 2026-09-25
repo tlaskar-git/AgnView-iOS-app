@@ -92,27 +92,32 @@ final class AppModel: ObservableObject {
     var sessionsAreDerived: Bool { !capabilities.contains(.sessions) }
     var usage: [UsageAccount] { usageSnapshot?.accounts ?? [] }
 
+    /// True when the session can call the hub API: on the LAN always, over
+    /// iroh when the hub lists the "api" capability (0.1.12 or later).
+    var hubServesAPI: Bool { capabilities.contains(.usage) }
+
     /// Why the LAN route is not in use while the session runs, or nil when
-    /// LAN carries it (or nothing is connected). A loopback pairing gives
-    /// pairedWithoutLAN. A real LAN address that failed gives notOnSameNetwork.
+    /// LAN carries it, iroh carries the API too, or nothing is connected. A
+    /// loopback pairing gives pairedWithoutLAN. A real LAN address that failed
+    /// gives notOnSameNetwork. Both apply only to a hub without remote access.
     var lanUnavailableReason: LANUnavailableReason? {
-        guard case .online(let route, _) = connection, route != .lan else { return nil }
+        guard case .online(let route, _) = connection, route != .lan, !hubServesAPI else { return nil }
         return relayOnly ? .pairedWithoutLAN : .notOnSameNetwork
     }
 
     var usageNotice: String? {
         guard connection.isOnline, !capabilities.contains(.usage) else { return nil }
-        return UserMessages.usageNeedsLAN(lanUnavailableReason ?? .notOnSameNetwork)
+        return UserMessages.hubNeedsUpdate
     }
 
     var jobsNotice: String? {
         guard connection.isOnline, !capabilities.contains(.jobs) else { return nil }
-        return UserMessages.jobsNeedsLAN(lanUnavailableReason ?? .notOnSameNetwork)
+        return UserMessages.hubNeedsUpdate
     }
 
     var dispatchNotice: String? {
         guard connection.isOnline, !canDispatch else { return nil }
-        return UserMessages.dispatchNeedsLAN(lanUnavailableReason ?? .notOnSameNetwork)
+        return UserMessages.hubNeedsUpdate
     }
 
     var sessionsNotice: String? {
@@ -287,12 +292,12 @@ final class AppModel: ObservableObject {
     }
 
     /// Sends a prompt. Throws DispatchUnavailable when the connection has no
-    /// dispatch capability (off the LAN).
+    /// dispatch capability (iroh to a hub before 0.1.12).
     @discardableResult
     func dispatch(agent: String, prompt: String, workingDir: String? = nil,
                   sessionId: String? = nil) async throws -> DispatchResponse {
         guard canDispatch else {
-            throw DispatchUnavailable(message: UserMessages.dispatchNeedsLAN(lanUnavailableReason ?? .notOnSameNetwork))
+            throw DispatchUnavailable(message: UserMessages.hubNeedsUpdate)
         }
         guard let client else { throw HubError.notConnected }
         let request = DispatchRequest(targetAgent: agent, prompt: prompt,
@@ -395,7 +400,9 @@ final class AppModel: ObservableObject {
                 if terminal(error, hubId: hubId) { return }
             case .connected(let session, let relayOnly):
                 liveSession = session
-                client = makeClient(endpoint)
+                // The session's own API route (iroh) wins. A LAN session has
+                // none, so the LAN client answers.
+                client = session.api.map { HubClient(api: $0) } ?? makeClient(endpoint)
                 store.markConnected(id: hubId)
                 syncFromStore()
                 backoff.reset()

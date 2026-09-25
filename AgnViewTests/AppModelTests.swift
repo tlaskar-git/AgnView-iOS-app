@@ -257,14 +257,14 @@ final class AppModelTests: XCTestCase {
             _ = try await model.dispatch(agent: "claude_code", prompt: "Example prompt")
             XCTFail("dispatch must throw off the LAN")
         } catch let error as DispatchUnavailable {
-            XCTAssertEqual(error.message, "Sending prompts needs the same Wi-Fi as your computer.")
+            XCTAssertEqual(error.message, "Your hub does not support remote access yet. Update AgnView on your computer to 0.1.12 or later.")
             XCTAssertEqual(error.localizedDescription, error.message)
         } catch {
             XCTFail("wrong error \(error)")
         }
         XCTAssertFalse(StubURLProtocol.requests.contains { $0.url.path == "/api/console/dispatch" })
-        XCTAssertEqual(model.usageNotice, "Usage needs the same Wi-Fi as your computer.")
-        XCTAssertEqual(model.jobsNotice, "Pipelines need the same Wi-Fi as your computer.")
+        XCTAssertEqual(model.usageNotice, UserMessages.hubNeedsUpdate)
+        XCTAssertEqual(model.jobsNotice, UserMessages.hubNeedsUpdate)
         XCTAssertEqual(model.sessionsNotice, "Showing sessions seen in the log stream")
         XCTAssertEqual(model.statusMessage, UserMessages.notOnSameNetworkBanner)
         await model.refreshUsage()
@@ -311,9 +311,9 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.lanUnavailableReason, .pairedWithoutLAN)
         XCTAssertEqual(model.statusMessage,
                        "This pairing has no local network address. In AgnView, turn on Allow phones on my network, then scan the pairing QR code again.")
-        XCTAssertEqual(model.dispatchNotice, UserMessages.pairedWithoutLANBanner)
-        XCTAssertEqual(model.usageNotice, UserMessages.pairedWithoutLANBanner)
-        XCTAssertEqual(model.jobsNotice, UserMessages.pairedWithoutLANBanner)
+        XCTAssertEqual(model.dispatchNotice, UserMessages.hubNeedsUpdate)
+        XCTAssertEqual(model.usageNotice, UserMessages.hubNeedsUpdate)
+        XCTAssertEqual(model.jobsNotice, UserMessages.hubNeedsUpdate)
     }
 
     func testNotOnSameNetworkReason() async {
@@ -326,23 +326,59 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.lanUnavailableReason, .notOnSameNetwork)
         XCTAssertEqual(model.statusMessage,
                        "Not on the same Wi-Fi as your computer. Console works over iroh. Prompts, Usage and Pipelines need the same Wi-Fi.")
-        XCTAssertEqual(model.dispatchNotice, "Sending prompts needs the same Wi-Fi as your computer.")
-        XCTAssertEqual(model.usageNotice, "Usage needs the same Wi-Fi as your computer.")
-        XCTAssertEqual(model.jobsNotice, "Pipelines need the same Wi-Fi as your computer.")
+        XCTAssertEqual(model.dispatchNotice, UserMessages.hubNeedsUpdate)
+        XCTAssertEqual(model.usageNotice, UserMessages.hubNeedsUpdate)
+        XCTAssertEqual(model.jobsNotice, UserMessages.hubNeedsUpdate)
     }
 
     func testMessageSelectionByReason() {
         XCTAssertEqual(UserMessages.lanBanner(.pairedWithoutLAN), UserMessages.pairedWithoutLANBanner)
         XCTAssertEqual(UserMessages.lanBanner(.notOnSameNetwork), UserMessages.notOnSameNetworkBanner)
-        XCTAssertEqual(UserMessages.dispatchNeedsLAN(.pairedWithoutLAN), UserMessages.pairedWithoutLANBanner)
-        XCTAssertEqual(UserMessages.usageNeedsLAN(.pairedWithoutLAN), UserMessages.pairedWithoutLANBanner)
-        XCTAssertEqual(UserMessages.jobsNeedsLAN(.pairedWithoutLAN), UserMessages.pairedWithoutLANBanner)
-        XCTAssertEqual(UserMessages.dispatchNeedsLAN(.notOnSameNetwork),
-                       "Sending prompts needs the same Wi-Fi as your computer.")
-        XCTAssertEqual(UserMessages.usageNeedsLAN(.notOnSameNetwork),
-                       "Usage needs the same Wi-Fi as your computer.")
-        XCTAssertEqual(UserMessages.jobsNeedsLAN(.notOnSameNetwork),
-                       "Pipelines need the same Wi-Fi as your computer.")
+        XCTAssertEqual(UserMessages.hubNeedsUpdate,
+                       "Your hub does not support remote access yet. Update AgnView on your computer to 0.1.12 or later.")
+    }
+
+    // MARK: Remote API over iroh
+
+    func testIrohSessionWithAPIHasFullCapabilitiesAndNoLANMessages() async throws {
+        let api = FakeAPITransport()
+        api.route("GET", "/api/mobile/status", 200, SampleJSON.status)
+        api.route("GET", "/api/usage/accounts", 200, SampleJSON.usage)
+        api.route("GET", "/api/jobs", 200, SampleJSON.jobs)
+        api.route("GET", "/api/console/live-sessions", 200, SampleJSON.liveSessions)
+        api.route("POST", "/api/console/dispatch", 200, SampleJSON.dispatch)
+        let session = ScriptedSession(route: .direct, capabilities: .irohAPI, api: api)
+        let model = makeModel(lan: TransportScript([TransportScript.fail(.unreachable)]),
+                              iroh: TransportScript([TransportScript.session(session)]))
+        model.pair(url: pairingURL())
+        await waitForState(model, .online(.direct, .irohAPI))
+        XCTAssertTrue(model.canDispatch)
+        XCTAssertTrue(model.usageIsLive)
+        XCTAssertTrue(model.jobsAreLive)
+        XCTAssertFalse(model.sessionsAreDerived)
+        XCTAssertNil(model.lanUnavailableReason)
+        XCTAssertNil(model.statusMessage)
+        XCTAssertNil(model.usageNotice)
+        XCTAssertNil(model.jobsNotice)
+        XCTAssertNil(model.dispatchNotice)
+        await waitUntil("usage over iroh") { model.usageSnapshot != nil }
+        let response = try await model.dispatch(agent: "codex", prompt: "Example prompt")
+        XCTAssertEqual(response.status, "dispatched")
+        XCTAssertTrue(api.calls.contains { $0.method == "POST" && $0.path == "/api/console/dispatch" })
+        XCTAssertTrue(StubURLProtocol.requests.isEmpty, "no LAN request when iroh carries the API")
+    }
+
+    func testIrohSessionWithoutAPIKeepsConsoleOnlyAndShowsUpdateMessage() async {
+        let session = ScriptedSession(route: .relay)
+        let model = makeModel(lan: TransportScript([TransportScript.fail(.unreachable)]),
+                              iroh: TransportScript([TransportScript.session(session)]))
+        model.pair(url: pairingURL())
+        await waitForState(model, .online(.relay, .iroh))
+        XCTAssertEqual(model.capabilities, [.consoleStream])
+        XCTAssertEqual(model.dispatchNotice, UserMessages.hubNeedsUpdate)
+        XCTAssertEqual(model.usageNotice, UserMessages.hubNeedsUpdate)
+        XCTAssertEqual(model.jobsNotice, UserMessages.hubNeedsUpdate)
+        XCTAssertEqual(model.sessionsNotice, UserMessages.sessionsFromLog)
     }
 
     // MARK: Console buffer
@@ -425,7 +461,7 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.usageSnapshot?.takenAt, taken)
         XCTAssertEqual(model.usage.count, 2)
         XCTAssertFalse(model.usageIsLive)
-        XCTAssertEqual(model.usageNotice, UserMessages.usageNeedsLAN(.notOnSameNetwork))
+        XCTAssertEqual(model.usageNotice, UserMessages.hubNeedsUpdate)
         await model.refreshUsage()
         XCTAssertEqual(model.usageSnapshot?.takenAt, taken)
     }
@@ -524,7 +560,7 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.sessions.count, 2)
         XCTAssertTrue(model.sessionsAreDerived)
         XCTAssertEqual(model.usage.count, 1)
-        XCTAssertEqual(model.usageNotice, UserMessages.usageNeedsLAN(.notOnSameNetwork))
+        XCTAssertEqual(model.usageNotice, UserMessages.hubNeedsUpdate)
         XCTAssertEqual(model.usageSnapshot?.takenAt, nowBox.date.addingTimeInterval(-300))
     }
 

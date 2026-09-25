@@ -1,0 +1,113 @@
+name: e2e-iroh
+
+on:
+  pull_request:
+  push:
+    branches:
+      - "bot/p5-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-iroh-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-iroh:
+    name: e2e-iroh (real hub)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout app repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout hub repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: tlaskar-git/AgnView
+          ref: main
+          path: hub
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install the hub and check its version
+        run: |
+          set +x
+          python -m venv "$RUNNER_TEMP/hubenv"
+          "$RUNNER_TEMP/hubenv/bin/pip" install --quiet ./hub
+          version="$("$RUNNER_TEMP/hubenv/bin/python" -c 'import importlib.metadata as m; print(m.version("agnview"))')"
+          echo "hub version $version"
+          "$RUNNER_TEMP/hubenv/bin/python" - "$version" <<'PY'
+          import sys
+          parts = tuple(int(p) for p in sys.argv[1].split(".")[:3])
+          sys.exit(0 if parts >= (0, 1, 12) else 1)
+          PY
+
+      - name: Generate a masked token
+        run: |
+          set -euo pipefail
+          TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          echo "::add-mask::$TOKEN"
+          {
+            echo "HUB_TOKEN=$TOKEN"
+            echo "HUB_BIN=$RUNNER_TEMP/hubenv/bin/agnview"
+          } >> "$GITHUB_ENV"
+
+      - name: Start the real hub headless and read the pairing payload
+        run: sh Tools/ci/start_iroh_hub.sh
+
+      - name: Install XcodeGen
+        run: |
+          set +x
+          brew install xcodegen
+
+      - name: Generate project
+        run: |
+          set +x
+          xcodegen generate
+
+      - name: Pick simulator
+        id: sim
+        run: |
+          set +x
+          udid="$(python3 Tools/ci/pick_sim.py iPhone)"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
+      - name: Test IrohTransport against the real hub
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          set +x
+          out="$RUNNER_TEMP/e2e-result.txt"
+          : > "$out"
+          TEST_RUNNER_AGNVIEW_E2E_TICKET="$AGNVIEW_E2E_TICKET"
+          TEST_RUNNER_AGNVIEW_E2E_KEY="$AGNVIEW_E2E_KEY"
+          TEST_RUNNER_AGNVIEW_E2E_OUT="$out"
+          export TEST_RUNNER_AGNVIEW_E2E_TICKET TEST_RUNNER_AGNVIEW_E2E_KEY TEST_RUNNER_AGNVIEW_E2E_OUT
+          status=0
+          xcodebuild test \
+            -scheme AgnView \
+            -destination "platform=iOS Simulator,id=$UDID" \
+            -only-testing:AgnViewTests/IrohRealHubTests \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO > "$RUNNER_TEMP/e2e-test.log" 2>&1 || status=$?
+          grep -E "Test Case.*(passed|failed|skipped)|Executed|TEST (SUCCEEDED|FAILED)" "$RUNNER_TEMP/e2e-test.log" || true
+          echo "--- result lines"
+          cat "$out"
+          test "$status" = "0"
+          grep -q "testRealHubAPIAndDispatchOverIroh\]' passed" "$RUNNER_TEMP/e2e-test.log"
+          grep -q "testRealHubRejectsAWrongKey\]' passed" "$RUNNER_TEMP/e2e-test.log"
+          grep -q "^E2E-ROUTE " "$out"
+          grep -q "^E2E-PASS dispatch output" "$out"
+
+      - name: Stop the hub
+        if: always()
+        run: kill "$HUB_PID" 2> /dev/null || true
