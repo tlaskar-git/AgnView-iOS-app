@@ -35,6 +35,7 @@ See [docs/RELEASE-SETUP.md](docs/RELEASE-SETUP.md) for the signing secrets and t
 - `release.yml` runs when a tag starting with `v` is pushed. It signs and uploads a build to TestFlight and uses the `release` environment secrets. It has not been tested end to end.
 - `gitleaks.yml` scans the repository history.
 - The Xcode project is generated from `project.yml` and is not committed.
+- [docs/DEVICE-TEST.md](docs/DEVICE-TEST.md) is the checklist for testing the TestFlight build on a real iPhone.
 - `Tools/mock-hub/mock_hub.py` is a placeholder-only hub for tests. It binds to the loopback address.
 
 ## Security
