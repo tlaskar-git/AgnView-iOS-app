@@ -106,9 +106,9 @@ final class HubClientTests: XCTestCase {
         XCTAssertEqual(request.headers["Content-Type"], "application/json")
         let body = try XCTUnwrap(request.body)
         let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
-        XCTAssertEqual(json["target_agent"] as? String, "claude_code")
+        XCTAssertEqual(json["agent"] as? String, "claude_code")
         XCTAssertEqual(json["prompt"] as? String, "Example prompt")
-        XCTAssertTrue(json["working_dir"] is NSNull)
+        XCTAssertTrue(json["working_directory"] is NSNull)
         XCTAssertTrue(json["session_id"] is NSNull)
     }
 
@@ -118,7 +118,7 @@ final class HubClientTests: XCTestCase {
                                                             workingDir: "example-project", sessionId: "s-1"))
         let body = try XCTUnwrap(StubURLProtocol.requests.first?.body)
         let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
-        XCTAssertEqual(json["working_dir"] as? String, "example-project")
+        XCTAssertEqual(json["working_directory"] as? String, "example-project")
         XCTAssertEqual(json["session_id"] as? String, "s-1")
     }
 

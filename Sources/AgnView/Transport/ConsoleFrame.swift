@@ -58,11 +58,11 @@ enum ConsoleFrame: Equatable, Codable {
             } else {
                 id = nil
             }
-            agent = try c.decodeIfPresent(String.self, forKey: .agent)
-            source = try c.decodeIfPresent(String.self, forKey: .source)
-            content = try c.decodeIfPresent(String.self, forKey: .content)
-            timestamp = try c.decodeIfPresent(String.self, forKey: .timestamp)
-            sessionId = try c.decodeIfPresent(String.self, forKey: .sessionId)
+            agent = c.lenientString(forKey: .agent)
+            source = c.lenientString(forKey: .source)
+            content = c.lenientString(forKey: .content)
+            timestamp = c.lenientString(forKey: .timestamp)
+            sessionId = c.lenientString(forKey: .sessionId)
         }
     }
 

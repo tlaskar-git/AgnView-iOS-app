@@ -1,0 +1,13 @@
+event: connected
+data: {"status": "connected", "transport": "offline"}
+
+event: agent_output_chunk
+data: {"job_id": "console", "event_type": "agent_output_chunk", "payload": {"id": 4, "agent": "codex", "source": "user_input", "content": "event probe", "timestamp": "2026-09-25T10:23:14.191636+00:00", "session_id": "sess-dae9022b"}, "created_at": "2026-09-25T10:23:14.192190+00:00"}
+
+event: agent_output_chunk
+data: {"job_id": "console", "event_type": "agent_output_chunk", "payload": {"id": 5, "agent": "codex", "source": "agent_stdout", "content": "stub agent line one\nstub agent line two", "timestamp": "2026-09-25T10:23:14.199487+00:00", "session_id": "sess-dae9022b", "streaming": false}, "created_at": "2026-09-25T10:23:14.200248+00:00"}
+
+event: agent_finished
+data: {"job_id": "console", "event_type": "agent_finished", "payload": {"id": 6, "agent": "codex", "exit_code": 0, "summary": "Finished", "timestamp": "2026-09-25T10:23:14.200866+00:00", "session_id": "sess-dae9022b"}, "created_at": "2026-09-25T10:23:14.201466+00:00"}
+
+: ping - 2026-09-25 10:23:28.185966+00:00

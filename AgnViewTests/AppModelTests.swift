@@ -283,7 +283,7 @@ final class AppModelTests: XCTestCase {
         let request = try XCTUnwrap(StubURLProtocol.requests.last { $0.url.path == "/api/console/dispatch" })
         let body = try XCTUnwrap(request.body)
         let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
-        XCTAssertEqual(json["target_agent"] as? String, "codex")
+        XCTAssertEqual(json["agent"] as? String, "codex")
         XCTAssertEqual(json["prompt"] as? String, "Example prompt")
     }
 
