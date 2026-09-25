@@ -179,7 +179,7 @@ final class PairingParserTests: XCTestCase {
             XCTAssertEqual($0 as? PairingError, .malformedURL)
         }
         XCTAssertThrowsError(try PairingParser.parse("hello world")) {
-            XCTAssertEqual($0 as? PairingError, .malformedURL)
+            XCTAssertEqual($0 as? PairingError, .wrongScheme)
         }
     }
 
