@@ -109,7 +109,7 @@ final class IrohRealHubTests: XCTestCase {
     /// Phase A over iroh: model, effort and files reach the agent, Sessions
     /// refresh reads the live sessions and the log, and the calls the hub
     /// keeps to the LAN are refused.
-    func testModelEffortSessionsAndLANOnlyRoutesOverIroh() async throws {
+    func testRealHubModelEffortSessionsAndLANOnlyRoutes() async throws {
         let session = try await connect()
         defer { Task { await session.close() } }
         let api = try XCTUnwrap(session.api)
@@ -119,9 +119,16 @@ final class IrohRealHubTests: XCTestCase {
         // agent prints the arguments it was given.
         let marker = "e2e-effort-\(UUID().uuidString.prefix(8))"
         report("E2E-STEP connected, dispatching")
-        let response = try await client.dispatch(DispatchRequest(targetAgent: "codex", prompt: marker,
+        report("E2E-STEP task cancelled before the call: \(Task.isCancelled)")
+        let response: DispatchResponse
+        do {
+            response = try await client.dispatch(DispatchRequest(targetAgent: "codex", prompt: marker,
                                                                  model: "gpt-5", effort: "low",
                                                                  files: ["README.md"]))
+        } catch {
+            report("E2E-STEP the dispatch threw \(type(of: error)) \(error), task cancelled: \(Task.isCancelled)")
+            throw error
+        }
         XCTAssertEqual(response.status, "dispatched")
         report("E2E-STEP dispatched, reading the log")
 
