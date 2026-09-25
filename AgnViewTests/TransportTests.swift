@@ -78,6 +78,31 @@ final class ScriptedReader {
     }
 }
 
+/// Serves chunks as the test sends them, so a test controls the timing.
+final class ChannelReader {
+    private let continuation: AsyncStream<Data>.Continuation
+    private var iterator: AsyncStream<Data>.Iterator
+
+    init() {
+        var captured: AsyncStream<Data>.Continuation!
+        let stream = AsyncStream<Data> { captured = $0 }
+        continuation = captured
+        iterator = stream.makeAsyncIterator()
+    }
+
+    func send(_ text: String) {
+        continuation.yield(Data(text.utf8))
+    }
+
+    func end() {
+        continuation.finish()
+    }
+
+    func read() async -> Data? {
+        await iterator.next()
+    }
+}
+
 /// An iroh-shaped transport over scripted NDJSON chunks.
 final class ScriptedStreamTransport: Transport {
     let chunks: [String]
@@ -176,8 +201,14 @@ final class TransportTests: XCTestCase {
 
     func testPingUpdatesRoute() async throws {
         let ping = #"{"type":"ping","transport":"iroh-relay"}"# + "\n"
-        let session = try await ScriptedStreamTransport([helloDirect, ping]).connect()
+        // The ping is held back until the route from hello is checked, since
+        // the session reads ahead as soon as it opens.
+        let reader = ChannelReader()
+        reader.send(helloDirect)
+        let session = try await ConsoleStreamSession.open(read: { await reader.read() }, onClose: {})
         XCTAssertEqual(session.route, .direct)
+        reader.send(ping)
+        reader.end()
         let result = await collect(session.frames)
         XCTAssertEqual(result.frames.last, .ping(transport: "iroh-relay"))
         XCTAssertEqual(session.route, .relay)
