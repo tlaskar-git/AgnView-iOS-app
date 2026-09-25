@@ -1,0 +1,92 @@
+name: hub-contract
+
+on:
+  push:
+    branches:
+      - "bot/p4-*"
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hub-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hub-contract:
+    name: hub-contract (${{ matrix.label }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: ${{ matrix.allow_fail }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: "0.1.8"
+            ref: "v0.1.8"
+            allow_fail: false
+          - label: "main"
+            ref: "main"
+            allow_fail: true
+    steps:
+      - name: Checkout app repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Checkout hub repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: tlaskar-git/AgnView
+          ref: ${{ matrix.ref }}
+          path: hub
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install the hub
+        run: |
+          python -m venv "$RUNNER_TEMP/hubenv"
+          "$RUNNER_TEMP/hubenv/bin/pip" install --quiet ./hub
+          "$RUNNER_TEMP/hubenv/bin/agnview" --help > /dev/null
+
+      - name: Generate a masked token
+        run: |
+          set -euo pipefail
+          TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          echo "::add-mask::$TOKEN"
+          {
+            echo "HUB_TOKEN=$TOKEN"
+            echo "HUB_BIN=$RUNNER_TEMP/hubenv/bin/agnview"
+          } >> "$GITHUB_ENV"
+
+      - name: Start a fresh hub for the probe
+        run: sh Tools/contract/start_hub.sh probe
+
+      - name: Probe every endpoint the app calls
+        run: python Tools/contract/probe_hub.py "http://127.0.0.1:$HUB_PORT" "$RUNNER_TEMP/probe/${{ matrix.label }}"
+
+      - name: Stop the probe hub
+        if: always()
+        run: kill "$HUB_PID" 2> /dev/null || true
+
+      - name: Upload probe results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hub-probe-${{ matrix.label }}
+          path: ${{ runner.temp }}/probe/${{ matrix.label }}
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Start a fresh hub for the contract check
+        run: sh Tools/contract/start_hub.sh check
+
+      - name: Check the contract the app needs
+        run: python Tools/contract/check_contract.py "http://127.0.0.1:$HUB_PORT"
+
+      - name: Stop the check hub
+        if: always()
+        run: kill "$HUB_PID" 2> /dev/null || true

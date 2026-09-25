@@ -1,0 +1,107 @@
+{
+  "about": "Keys and JSON types the app decoders need from the hub, derived from Sources/AgnView/Client/ClientModels.swift, Sources/AgnView/Models.swift and Sources/AgnView/Transport/ConsoleFrame.swift. A schema is a type string such as \"string|null\" or an object with type, required, optional, items or values. Types: string, number, integer, boolean, object, array, null. A required key must exist. An optional key is checked when present.",
+  "token_header": "X-AgnView-Token",
+  "dispatch_request": {"agent": "codex", "prompt": "contract check", "working_directory": null, "session_id": null},
+  "status": {
+    "type": "object",
+    "required": {"status": "string"},
+    "optional": {
+      "app": "string",
+      "bind_mode": "string|null",
+      "transport_label": "string|null",
+      "resolved_transport": "string|null"
+    }
+  },
+  "usage_accounts": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "required": {"id": "string", "provider": "string"},
+      "optional": {
+        "name": "string|null",
+        "plan_name": "string|null",
+        "plan_label": "string|null",
+        "tokens_used": "number|null",
+        "tokens_limit": "number|null",
+        "cost_used_usd": "number|null",
+        "cost_limit_usd": "number|null",
+        "requests_used": "number|null",
+        "status": "string|null",
+        "last_checked": "string|null",
+        "percent_used": "number|null",
+        "session_percent_used": "number|null",
+        "weekly_percent_used": "number|null",
+        "error_message": "string|null"
+      }
+    }
+  },
+  "jobs": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "required": {"id": "string"},
+      "optional": {
+        "title": "string|null",
+        "description": "string|null",
+        "status": "string|null",
+        "created_at": "string|null",
+        "updated_at": "string|null",
+        "tasks": {
+          "type": "object|array",
+          "values": {
+            "type": "object",
+            "required": {"id": "string"},
+            "optional": {
+              "job_id": "string|null",
+              "title": "string|null",
+              "description": "string|null",
+              "assigned_agent": "string|null",
+              "status": "string|null",
+              "dependencies": "array|null",
+              "output_summary": "string|null"
+            }
+          }
+        }
+      }
+    }
+  },
+  "console_logs": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "required": {"id": "integer"},
+      "optional": {
+        "agent": "string|null",
+        "source": "string|null",
+        "content": "string|null",
+        "timestamp": "string|null",
+        "session_id": "string|null"
+      }
+    }
+  },
+  "live_sessions": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "required": {},
+      "optional": {
+        "agent": "string|null",
+        "session_id": "string|null",
+        "cli_session_id": "string|null",
+        "working_directory": "string|null",
+        "busy": "boolean",
+        "idle_seconds": "number|null",
+        "pid": "integer|null"
+      }
+    }
+  },
+  "dispatch_response": {
+    "type": "object",
+    "required": {"status": "string", "session_id": "string"},
+    "optional": {"agent": "string|null", "message": "string|null"}
+  },
+  "error_body": {
+    "type": "object",
+    "required": {"detail": "string"}
+  }
+}

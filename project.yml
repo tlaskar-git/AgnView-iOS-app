@@ -33,6 +33,8 @@ targets:
       path: Config/AgnView-Info.plist
       properties:
         CFBundleDisplayName: AgnView
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleURLTypes:
           - CFBundleURLName: com.example.agnview
             CFBundleURLSchemes:

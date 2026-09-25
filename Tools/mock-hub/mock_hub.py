@@ -23,51 +23,78 @@ SLOW_SECONDS = 1.2
 KEEP_ALIVE_SECONDS = 10
 NOW = "2026-01-01T00:00:00Z"
 
+# Shapes copied from a real AgnView 0.1.8 hub (see Tools/contract). Only the
+# values are placeholders.
 STATUS = {
+    "app": "AgnView",
     "status": "healthy",
-    "service": "AgnView Mock Hub",
-    "version": "0.0.0-mock",
-    "endpoints": {"local": "http://127.0.0.1"},
-    "paired_agents_online": 3,
+    "endpoints": {"local": "http://localhost:8765", "localhost": "http://127.0.0.1:8765",
+                  "lan": "http://127.0.0.1:8765", "hostname": "http://mock-hub.example.test:8765"},
+    "bind_mode": "loopback",
+    "transport_label": "Loopback only",
+    "resolved_transport": "offline",
+    "iroh": {"name": "iroh", "state": "disabled", "error": "mock", "ticket": None, "node_id": None,
+             "relay_url": None, "configured_relay_url": None, "direct_addresses": [],
+             "connections": 0, "last_resolved_transport": None},
 }
 
+
+def _account(acc_id, provider, name, tokens, limit, cost, cost_limit, requests, checked, status):
+    return {
+        "id": acc_id, "provider": provider, "name": name, "auth_type": "session_token",
+        "credential": "****", "org_id": None, "plan_name": "Example plan",
+        "requests_used": requests, "requests_limit": None, "requests_remaining": None,
+        "tokens_used": tokens, "tokens_limit": limit, "tokens_remaining": None,
+        "cost_used_usd": cost, "cost_limit_usd": cost_limit, "reset_time": None,
+        "percent_used": None, "status": status, "last_checked": checked,
+        "error_message": None if status == "active" else "Placeholder: nothing measured.",
+        "base_url": None, "plan_label": None, "session_percent_used": None,
+        "weekly_percent_used": None, "observation": None,
+        "usage": {"source": "none", "confidence": "unavailable", "measured_at": checked,
+                  "age_seconds": 0.0, "age_text": "just measured", "is_stale": False,
+                  "error": None, "plan_name": None, "plan_label": None, "windows": []},
+        "masked_credential": "****", "last_synced_at": checked, "needs_telemetry_sync": False,
+    }
+
+
 USAGE = [
-    {"id": "acc-claude", "name": "Example Claude", "provider": "claude",
-     "plan_name": "Example plan", "tokens_used": 120000, "tokens_limit": 500000,
-     "cost_used": 12.5, "cost_limit": 100.0, "requests_count": 42,
-     "last_probed": NOW, "is_active": True},
-    {"id": "acc-chatgpt", "name": "Example ChatGPT", "provider": "chatgpt",
-     "plan_name": "Example plan", "tokens_used": 80000, "tokens_limit": 400000,
-     "cost_used": 8.0, "cost_limit": 50.0, "requests_count": 21,
-     "last_probed": NOW, "is_active": True},
-    {"id": "acc-gemini", "name": "Example Gemini", "provider": "gemini",
-     "plan_name": "Example plan", "tokens_used": 30000, "tokens_limit": None,
-     "cost_used": 0.0, "cost_limit": None, "requests_count": 9,
-     "last_probed": None, "is_active": False},
+    _account("acc-claude", "claude", "Example Claude", 120000, 500000, 12.5, 100.0, 42, NOW, "active"),
+    _account("acc-chatgpt", "chatgpt", "Example ChatGPT", 80000, 400000, 8.0, 50.0, 21, NOW, "active"),
+    _account("acc-gemini", "gemini", "Example Gemini", None, None, None, None, None, None, "unavailable"),
 ]
 
+
+def _task(task_id, title, agent, status, deps, summary=None):
+    return {"id": task_id, "job_id": "job-1", "title": title, "description": "Placeholder task",
+            "assigned_agent": agent, "executed_by": None, "dependencies": deps, "status": status,
+            "output_summary": summary, "artifacts": [], "revisions": [],
+            "created_at": NOW, "updated_at": NOW, "completed_at": None}
+
+
+# The hub sends tasks as an object keyed by task id, not as an array.
 JOBS = [
     {"id": "job-1", "title": "Example pipeline", "description": "Placeholder job",
      "status": "in_progress", "created_at": NOW, "updated_at": NOW,
-     "tasks": [
-         {"id": "task-1", "job_id": "job-1", "title": "Example task",
-          "description": "Placeholder task", "assigned_agent": "example-agent",
-          "status": "ready", "dependencies": [], "output_summary": None},
-     ]},
+     "tasks": {
+         "task-1": _task("task-1", "Example task", "example-agent", "ready", []),
+         "task-2": _task("task-2", "Follow-up task", "example-agent", "pending", ["task-1"]),
+     }},
 ]
 
 LOGS = [
     {"id": 1, "agent": "system", "source": "system_notice",
-     "content": "Mock hub started", "timestamp": NOW, "session_id": None},
+     "content": "Mock hub started", "timestamp": NOW, "session_id": None, "metadata": {}},
     {"id": 2, "agent": "claude_code", "source": "stdout",
-     "content": "Example output line", "timestamp": NOW, "session_id": "session-1"},
+     "content": "Example output line", "timestamp": NOW, "session_id": "session-1", "metadata": {}},
     {"id": 3, "agent": "user", "source": "user_input",
-     "content": "Example prompt", "timestamp": NOW, "session_id": "session-1"},
+     "content": "Example prompt", "timestamp": NOW, "session_id": "session-1", "metadata": {}},
 ]
 
 LIVE_SESSIONS = [
-    {"agent": "claude_code", "session_id": "session-1", "working_directory": "example-project",
-     "busy": False, "idle_seconds": 12},
+    {"agent": "claude_code", "working_directory": "example-project", "dialect": "claude",
+     "session_id": "session-1", "cli_session_id": None, "busy": False, "alive": True,
+     "queued_turns": 0, "turns_completed": 1, "started_at": 1767225600.0,
+     "uptime_seconds": 60.0, "idle_seconds": 12.0, "pid": 4242},
 ]
 
 EVENTS = [
@@ -165,9 +192,12 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             self._send(422, {"detail": "invalid body"})
             return
-        agent = payload.get("target_agent") or payload.get("agent") or "claude_code"
-        if not isinstance(agent, str) or len(agent) > 64:
-            agent = "claude_code"
+        # The real hub reads "agent" and answers 422 when it is missing.
+        agent = payload.get("agent")
+        if not isinstance(agent, str) or not agent or len(agent) > 64:
+            self._send(422, {"detail": [{"type": "missing", "loc": ["body", "agent"],
+                                         "msg": "Field required"}]})
+            return
         self._send(200, {
             "status": "dispatched",
             "agent": agent,

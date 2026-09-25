@@ -354,7 +354,7 @@ final class TransportTests: XCTestCase {
 
     func testMockHubDispatch() async throws {
         try await requireMockHub()
-        let body = Data(#"{"target_agent":"claude_code","prompt":"Example prompt"}"#.utf8)
+        let body = Data(#"{"agent":"claude_code","prompt":"Example prompt"}"#.utf8)
         let data = try await mockHub().post("/api/console/dispatch", json: body)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(object["status"] as? String, "dispatched")

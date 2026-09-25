@@ -1,0 +1,90 @@
+[
+  {
+    "id": "job-probe-a",
+    "title": "Probe pipeline A",
+    "description": "Two tasks with a dependency",
+    "status": "in_progress",
+    "tasks": {
+      "a-build": {
+        "id": "a-build",
+        "job_id": "job-probe-a",
+        "title": "Build",
+        "description": "First task",
+        "assigned_agent": "claude_code",
+        "executed_by": "claude_code",
+        "dependencies": [],
+        "status": "in_progress",
+        "output_summary": null,
+        "artifacts": [],
+        "revisions": [],
+        "created_at": "2026-09-25T10:23:12.111523+00:00",
+        "updated_at": "2026-09-25T10:23:12.127890+00:00",
+        "completed_at": null
+      },
+      "a-review": {
+        "id": "a-review",
+        "job_id": "job-probe-a",
+        "title": "Review",
+        "description": "Second task",
+        "assigned_agent": "codex",
+        "executed_by": null,
+        "dependencies": [
+          "a-build"
+        ],
+        "status": "pending",
+        "output_summary": null,
+        "artifacts": [],
+        "revisions": [],
+        "created_at": "2026-09-25T10:23:12.111523+00:00",
+        "updated_at": "2026-09-25T10:23:12.111523+00:00",
+        "completed_at": null
+      }
+    },
+    "created_at": "2026-09-25T10:23:12.111523+00:00",
+    "updated_at": "2026-09-25T10:23:12.129553+00:00"
+  },
+  {
+    "id": "job-probe-b",
+    "title": "Probe pipeline B",
+    "description": "",
+    "status": "pending",
+    "tasks": {
+      "b-one": {
+        "id": "b-one",
+        "job_id": "job-probe-b",
+        "title": "One",
+        "description": "",
+        "assigned_agent": "codex",
+        "executed_by": null,
+        "dependencies": [],
+        "status": "ready",
+        "output_summary": null,
+        "artifacts": [],
+        "revisions": [],
+        "created_at": "2026-09-25T10:23:12.116880+00:00",
+        "updated_at": "2026-09-25T10:23:12.116880+00:00",
+        "completed_at": null
+      },
+      "b-two": {
+        "id": "b-two",
+        "job_id": "job-probe-b",
+        "title": "Two",
+        "description": "",
+        "assigned_agent": "antigravity",
+        "executed_by": null,
+        "dependencies": [
+          "b-one"
+        ],
+        "status": "pending",
+        "output_summary": null,
+        "artifacts": [],
+        "revisions": [],
+        "created_at": "2026-09-25T10:23:12.116880+00:00",
+        "updated_at": "2026-09-25T10:23:12.116880+00:00",
+        "completed_at": null
+      }
+    },
+    "created_at": "2026-09-25T10:23:12.116880+00:00",
+    "updated_at": "2026-09-25T10:23:12.116880+00:00"
+  }
+]

@@ -1,0 +1,32 @@
+[
+  {
+    "agent": "claude_code",
+    "working_directory": "/home/example/project",
+    "dialect": "claude",
+    "session_id": "sess-00000000",
+    "cli_session_id": "00000000-0000-0000-0000-000000000000",
+    "busy": true,
+    "alive": true,
+    "queued_turns": 0,
+    "turns_completed": 2,
+    "started_at": 1767225600.5,
+    "uptime_seconds": 120.5,
+    "idle_seconds": 3.25,
+    "pid": 4242
+  },
+  {
+    "agent": "antigravity",
+    "working_directory": "/home/example/other",
+    "dialect": "antigravity",
+    "session_id": null,
+    "cli_session_id": null,
+    "busy": false,
+    "alive": true,
+    "queued_turns": 0,
+    "turns_completed": 0,
+    "started_at": 1767225600.5,
+    "uptime_seconds": 10.0,
+    "idle_seconds": 10.0,
+    "pid": null
+  }
+]
