@@ -1,46 +1,29 @@
-name: release
+name: release-preflight
+
+# Manual signing preflight. Runs the release steps up to and including export,
+# then validates the IPA with App Store Connect. It uploads nothing and it
+# publishes no artifact. The "release" environment requires approval per run.
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  testflight:
+  preflight:
     runs-on: macos-latest
     environment: release
     timeout-minutes: 60
     env:
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      APP_BUNDLE_ID: ${{ secrets.APP_BUNDLE_ID }}
-      APPLE_DISTRIBUTION_CERT_P12_BASE64: ${{ secrets.APPLE_DISTRIBUTION_CERT_P12_BASE64 }}
-      APPLE_DISTRIBUTION_CERT_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_CERT_PASSWORD }}
-      APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
-      APPLE_PROVISIONING_PROFILE_NAME: ${{ secrets.APPLE_PROVISIONING_PROFILE_NAME }}
       ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
       ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
-      ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
 
-      - name: Require tagged commit on main
-        run: |
-          set +x
-          git fetch origin main
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "The tagged commit is not an ancestor of origin/main. Refusing to release."
-            exit 1
-          fi
-
-      # Shared steps (input and icon checks, project generation, signing,
-      # archive, export). Nothing is uploaded here. The upload step follows.
       - name: Sign, archive and export
         uses: ./.github/actions/ios-sign-archive
         with:
@@ -53,14 +36,14 @@ jobs:
           asc-key-id: ${{ secrets.ASC_API_KEY_ID }}
           asc-issuer-id: ${{ secrets.ASC_API_ISSUER_ID }}
           asc-key-p8-base64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
-          marketing-version: ${{ github.ref_name }}
+          marketing-version: "0.1.0"
           build-number: ${{ github.run_number }}
 
-      - name: Upload to TestFlight
+      - name: Validate with App Store Connect (no upload)
         run: |
           set +x
           ipa="$(ls "$RUNNER_TEMP"/export/*.ipa | head -n 1)"
-          xcrun altool --upload-app -f "$ipa" -t ios \
+          xcrun altool --validate-app -f "$ipa" -t ios \
             --apiKey "$ASC_API_KEY_ID" --apiIssuer "$ASC_API_ISSUER_ID"
 
       - name: Clean up

@@ -121,6 +121,37 @@ Copy the content of each `.b64` file into the matching secret. Use the team iden
 
 The marketing version comes from the tag. The build number comes from the workflow run number.
 
+## Preflight
+
+The preflight checks the nine secrets and the whole signing chain without uploading anything. Run it before the first release and after any secret changes.
+
+1. Open the repository on GitHub, then Actions, then `release-preflight`.
+2. Select Run workflow on `main`.
+3. Approve the run when the `release` environment asks.
+
+The run checks the secrets and the icon, generates the project, imports the certificate into a temporary keychain, checks the profile, signs an archive, exports an IPA and validates it with App Store Connect. It never uploads the IPA and never publishes an artifact. The workflow deletes the keychain, profile and decoded files at the end. The `release` workflow runs the same input, icon and signing steps before it uploads.
+
+Each line reads `PASS` or `FAIL`. No line ever shows a value. Fix the failing check like this.
+
+| Failing check | What to fix |
+|---|---|
+| `APPLE_TEAM_ID`, `ASC_API_KEY_ID` format | 10 upper case letters or digits. The team ID is on the Membership page. The key ID is on the API key row. |
+| `ASC_API_KEY_ID` and `APPLE_TEAM_ID` hold the same value | One of the two holds the wrong value. Enter the key ID from the API key row. |
+| `ASC_API_ISSUER_ID` | A UUID from the top of the API keys page. |
+| `APP_BUNDLE_ID` | Reverse-DNS, not `com.example`. Use the identifier of the registered App ID. |
+| `APPLE_PROVISIONING_PROFILE_NAME` | Must not be empty. Copy the exact profile name. |
+| Any `_BASE64` secret decodes | Encode the file again as one line, as in section c8. |
+| `ASC_API_KEY_P8_BASE64` header | The file must be the `.p8` key, not another file. |
+| `APPLE_PROVISIONING_PROFILE_BASE64` CMS | The file must be the `.mobileprovision` download. |
+| `icon` | The icon must be 1024x1024 with no alpha channel. Run `python3 Tools/ci/check_icon.py <file>`. |
+| `profile` Name | The name secret must equal the profile name in the Apple portal. |
+| `profile` TeamIdentifier | The profile belongs to another team. Create a new profile. |
+| `profile` application-identifier | The profile is for another App ID. Create a profile for the bundle ID in the secret. |
+| `profile` expired | Create a new profile and update both profile secrets. |
+| `profile` DeveloperCertificates mismatch | The profile does not include the certificate in the `.p12`. Edit the profile, select the certificate and download it again. |
+| Archive or export fails | Read the Xcode error. Usual causes are a wrong certificate password or a profile that does not match the App ID. |
+| `altool` validation fails | Read the message. Usual causes are a wrong API key role, an app record that does not exist, or a build number that is not higher than the last upload. |
+
 ## f. Export compliance
 
 Answer the export compliance question in App Store Connect when the first build appears. This repository makes no claim and sets no encryption key in the app configuration.
