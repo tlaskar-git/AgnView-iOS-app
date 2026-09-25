@@ -263,10 +263,10 @@ final class AppModelTests: XCTestCase {
             XCTFail("wrong error \(error)")
         }
         XCTAssertFalse(StubURLProtocol.requests.contains { $0.url.path == "/api/console/dispatch" })
-        XCTAssertEqual(model.usageNotice, "Usage needs your local network.")
-        XCTAssertEqual(model.jobsNotice, "Pipelines need your local network.")
+        XCTAssertEqual(model.usageNotice, "Usage needs the same Wi-Fi as your computer.")
+        XCTAssertEqual(model.jobsNotice, "Pipelines need the same Wi-Fi as your computer.")
         XCTAssertEqual(model.sessionsNotice, "Showing sessions seen in the log stream")
-        XCTAssertNil(model.statusMessage)
+        XCTAssertEqual(model.statusMessage, UserMessages.notOnSameNetworkBanner)
         await model.refreshUsage()
         await model.refreshJobs()
         XCTAssertNil(model.usageSnapshot)
