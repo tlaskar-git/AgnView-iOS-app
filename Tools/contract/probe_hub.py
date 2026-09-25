@@ -102,6 +102,12 @@ def main():
     call("status_bearer", "GET", "/api/mobile/status", token=False, headers={"Authorization": "Bearer " + TOKEN})
     call("status_old_app_header", "GET", "/api/mobile/status", token=False, headers={"X-Pairing-Key": TOKEN})
     call("usage_accounts", "GET", "/api/usage/accounts")
+    # Seed usage cards through the API. No credential is supplied, so every
+    # provider answers from an empty machine.
+    for provider in ("claude", "chatgpt", "gemini", "deepseek"):
+        call("usage_add_" + provider, "POST", "/api/usage/accounts",
+             {"provider": provider, "name": "Probe " + provider, "auth_type": "session_token"}, timeout=40)
+    call("usage_accounts_seeded", "GET", "/api/usage/accounts", timeout=40)
     call("usage_accounts_bad_token", "GET", "/api/usage/accounts", token="wrong-token-value")
 
     # Seed jobs through the API
