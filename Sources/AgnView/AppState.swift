@@ -13,7 +13,7 @@ enum MockHub {
 
     static func get(_ path: String, base: URL) async throws -> Data {
         var request = URLRequest(url: base.appendingPathComponent(path))
-        request.setValue(pairingKey, forHTTPHeaderField: "X-Pairing-Key")
+        request.setValue(pairingKey, forHTTPHeaderField: "X-AgnView-Token")
         request.timeoutInterval = 10
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
