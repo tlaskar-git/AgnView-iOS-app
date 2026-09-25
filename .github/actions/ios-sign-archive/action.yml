@@ -115,23 +115,45 @@ runs:
         APPLE_DISTRIBUTION_CERT_PASSWORD: ${{ inputs.cert-password }}
       run: |
         set +x
+        set -o pipefail
+        redact() { python3 Tools/ci/redact_log.py; }
         dir="$RUNNER_TEMP/release-secrets"
         keychain="$RUNNER_TEMP/release.keychain-db"
-        keychain_password="$(openssl rand -base64 32)"
-        echo "::add-mask::$keychain_password"
-        security create-keychain -p "$keychain_password" "$keychain"
-        security set-keychain-settings -lut 7200 "$keychain"
-        security unlock-keychain -p "$keychain_password" "$keychain"
+        KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+        export KEYCHAIN_PASSWORD
+        echo "::add-mask::$KEYCHAIN_PASSWORD"
+        security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain" 2>&1 | redact
+        security set-keychain-settings -lut 7200 "$keychain" 2>&1 | redact
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain" 2>&1 | redact
         security import "$dir/cert.p12" -P "$APPLE_DISTRIBUTION_CERT_PASSWORD" \
-          -A -t cert -f pkcs12 -k "$keychain" > /dev/null
+          -A -T /usr/bin/codesign -t cert -f pkcs12 -k "$keychain" 2>&1 | redact
         security set-key-partition-list -S apple-tool:,apple: -s \
-          -k "$keychain_password" "$keychain" > /dev/null
+          -k "$KEYCHAIN_PASSWORD" "$keychain" > /dev/null 2>&1
         security list-keychains -d user -s "$keychain" login.keychain-db
+
+        # The signing identity must chain to an Apple WWDR intermediate. GitHub
+        # macOS images usually carry it. If no identity is valid, download the
+        # public G3 and G6 intermediates from apple.com into the temporary keychain.
+        valid="$(security find-identity -v -p codesigning "$keychain" | grep -c '^ *[0-9]*)' || true)"
+        if [ "$valid" -eq 0 ]; then
+          echo "no valid signing identity yet, adding the Apple WWDR intermediates"
+          for cert in AppleWWDRCAG3 AppleWWDRCAG6; do
+            curl -fsSL "https://www.apple.com/certificateauthority/${cert}.cer" -o "$RUNNER_TEMP/${cert}.cer"
+            security import "$RUNNER_TEMP/${cert}.cer" -t cert -k "$keychain" 2>&1 | redact || true
+          done
+          valid="$(security find-identity -v -p codesigning "$keychain" | grep -c '^ *[0-9]*)' || true)"
+        fi
+        echo "valid signing identities in the temporary keychain: $valid"
+
         security cms -D -i "$dir/profile.mobileprovision" > "$dir/profile.plist"
         profile_uuid="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$dir/profile.plist")"
         echo "::add-mask::$profile_uuid"
-        mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-        cp "$dir/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/${profile_uuid}.mobileprovision"
+        # Xcode 16 and later read the UserData folder. Older Xcode reads MobileDevice.
+        for pdir in "$HOME/Library/MobileDevice/Provisioning Profiles" \
+          "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+          mkdir -p "$pdir"
+          cp "$dir/profile.mobileprovision" "$pdir/${profile_uuid}.mobileprovision"
+        done
         echo "KEYCHAIN_PATH=$keychain" >> "$GITHUB_ENV"
         echo "PROFILE_UUID=$profile_uuid" >> "$GITHUB_ENV"
 
@@ -155,6 +177,7 @@ runs:
         BUILD_NUMBER_INPUT: ${{ inputs.build-number }}
       run: |
         set +x
+        set -o pipefail
         version="${MARKETING_VERSION_INPUT#v}"
         xcodebuild archive \
           -scheme AgnView \
@@ -168,7 +191,7 @@ runs:
           DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
           PROVISIONING_PROFILE_SPECIFIER="$APPLE_PROVISIONING_PROFILE_NAME" \
           PRODUCT_BUNDLE_IDENTIFIER="$APP_BUNDLE_ID" \
-          OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN_PATH"
+          OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN_PATH" 2>&1 | python3 Tools/ci/redact_log.py
 
     - name: Export IPA
       shell: bash
@@ -178,6 +201,7 @@ runs:
         APPLE_PROVISIONING_PROFILE_NAME: ${{ inputs.profile-name }}
       run: |
         set +x
+        set -o pipefail
         plist="$RUNNER_TEMP/release-secrets/ExportOptions.plist"
         pb=/usr/libexec/PlistBuddy
         rm -f "$plist"
@@ -185,10 +209,11 @@ runs:
         "$pb" -c "Add :teamID string $APPLE_TEAM_ID" "$plist"
         "$pb" -c "Add :signingStyle string manual" "$plist"
         "$pb" -c "Add :signingCertificate string Apple Distribution" "$plist"
+        "$pb" -c "Add :uploadSymbols bool true" "$plist"
         "$pb" -c "Add :provisioningProfiles dict" "$plist"
         "$pb" -c "Add :provisioningProfiles:$APP_BUNDLE_ID string $APPLE_PROVISIONING_PROFILE_NAME" "$plist"
         xcodebuild -exportArchive \
           -archivePath "$RUNNER_TEMP/AgnView.xcarchive" \
           -exportPath "$RUNNER_TEMP/export" \
-          -exportOptionsPlist "$plist"
+          -exportOptionsPlist "$plist" 2>&1 | python3 Tools/ci/redact_log.py
         ls "$RUNNER_TEMP/export"/*.ipa > /dev/null

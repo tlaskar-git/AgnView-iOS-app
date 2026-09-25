@@ -148,7 +148,9 @@ Each line reads `PASS` or `FAIL`. No line ever shows a value. Fix the failing ch
 | `profile` TeamIdentifier | The profile belongs to another team. Create a new profile. |
 | `profile` application-identifier | The profile is for another App ID. Create a profile for the bundle ID in the secret. |
 | `profile` expired | Create a new profile and update both profile secrets. |
-| `profile` DeveloperCertificates mismatch | The profile does not include the certificate in the `.p12`. Edit the profile, select the certificate and download it again. |
+| `profile` DeveloperCertificates mismatch | The check prints only counts and hints, never a value. `0 in common` means the profile was created for a different certificate than the one in the `.p12`. Edit the profile, select the certificate and download it again. `keychain has 0 signing identities` means the `.p12` imported no identity: check the password and that the `.p12` holds the private key. |
+
+All signing tool output in the workflows passes through `Tools/ci/redact_log.py`, which removes certificate names, team IDs, UUIDs, hashes and profile paths before they reach the public log.
 | Archive or export fails | Read the Xcode error. Usual causes are a wrong certificate password or a profile that does not match the App ID. |
 | `altool` validation fails | Read the message. Usual causes are a wrong API key role, an app record that does not exist, or a build number that is not higher than the last upload. |
 

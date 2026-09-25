@@ -66,27 +66,18 @@ else
   fail "profile has expired"
 fi
 
-# Certificate SHA-1 fingerprints in the temporary keychain.
-security find-certificate -a -Z "$keychain" 2>/dev/null \
-  | sed -n 's/^SHA-1 hash: *//p' | tr 'a-f' 'A-F' > "$tmp/keychain.sha1"
-
-matched=0
-i=0
-while :; do
-  b64="$(plutil -extract "DeveloperCertificates.$i" raw -o - "$plist" 2>/dev/null)" || break
-  [ -n "$b64" ] || break
-  sum="$(printf '%s' "$b64" | base64 --decode 2>/dev/null | shasum -a 1 | cut -d ' ' -f 1 | tr 'a-f' 'A-F')"
-  mask "$sum"
-  if [ -n "$sum" ] && grep -qx "$sum" "$tmp/keychain.sha1"; then
-    matched=1
-  fi
-  i=$((i + 1))
-done
-
-if [ "$matched" -eq 1 ]; then
-  pass "DeveloperCertificates contains the imported certificate (match)"
+# Certificates: the profile lists DER certificates, the keychain lists imported
+# identities. cert_match.py compares SHA-1 fingerprints and prints counts only.
+# find-identity runs without -v so identities that are not yet trusted still list.
+here="$(cd "$(dirname "$0")" && pwd)"
+security find-identity -p codesigning "$keychain" > "$tmp/identities.txt" 2>/dev/null
+python3 "$here/cert_match.py" "$plist" "$tmp/identities.txt" > "$tmp/match.txt" 2>&1
+match_rc=$?
+sed 's/^/profile certs: /' "$tmp/match.txt"
+if [ "$match_rc" -eq 0 ]; then
+  pass "DeveloperCertificates contains an imported signing identity"
 else
-  fail "DeveloperCertificates does not contain the imported certificate (mismatch)"
+  fail "DeveloperCertificates does not contain an imported signing identity"
 fi
 
 if [ "$fails" -ne 0 ]; then

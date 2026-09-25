@@ -42,9 +42,11 @@ jobs:
       - name: Validate with App Store Connect (no upload)
         run: |
           set +x
+          set -o pipefail
           ipa="$(ls "$RUNNER_TEMP"/export/*.ipa | head -n 1)"
           xcrun altool --validate-app -f "$ipa" -t ios \
-            --apiKey "$ASC_API_KEY_ID" --apiIssuer "$ASC_API_ISSUER_ID"
+            --apiKey "$ASC_API_KEY_ID" --apiIssuer "$ASC_API_ISSUER_ID" 2>&1 \
+            | python3 Tools/ci/redact_log.py
 
       - name: Clean up
         if: always()
@@ -55,6 +57,7 @@ jobs:
           fi
           if [ -n "${PROFILE_UUID:-}" ]; then
             rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/${PROFILE_UUID}.mobileprovision"
+            rm -f "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/${PROFILE_UUID}.mobileprovision"
           fi
           rm -f "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8"
           rm -rf "$RUNNER_TEMP/release-secrets" "$RUNNER_TEMP/export" "$RUNNER_TEMP/AgnView.xcarchive"
