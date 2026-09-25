@@ -29,7 +29,7 @@ struct RootView: View {
 
 struct ScreenView: View {
     let screen: Screen
-    @EnvironmentObject private var state: AppState
+    @EnvironmentObject private var state: AppModel
 
     var body: some View {
         ScrollView {
@@ -47,8 +47,8 @@ struct ScreenView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .task(id: screen) {
-            if screen == .usage || screen == .console {
-                await state.refresh()
+            if screen == .usage {
+                await state.refreshUsage()
             }
         }
     }

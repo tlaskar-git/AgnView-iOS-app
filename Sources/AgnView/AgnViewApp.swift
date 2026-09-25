@@ -2,13 +2,14 @@ import SwiftUI
 
 @main
 struct AgnViewApp: App {
-    @StateObject private var state = AppState()
+    @StateObject private var model = AppModel.forLaunch()
 
     var body: some Scene {
         WindowGroup {
             RootView()
-                .environmentObject(state)
-                .task { await state.refresh() }
+                .environmentObject(model)
+                .task { model.start() }
+                .onOpenURL { url in model.pair(url: url) }
         }
     }
 }
