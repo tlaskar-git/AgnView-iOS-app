@@ -22,8 +22,9 @@ enum IrohConsoleRequest {
 #if canImport(IrohLib)
 import IrohLib
 
-/// Console stream over iroh. The hub serves only the console log stream over
-/// iroh, so the session has the consoleStream capability only.
+/// Console stream and mobile API over iroh. The session has the consoleStream
+/// capability always. It has the full set, with an API route that opens one
+/// stream per call, when the hello frame lists "api" (hub 0.1.12 or later).
 final class IrohTransport: Transport {
     let ticket: String
     let token: String?
@@ -75,9 +76,27 @@ final class IrohTransport: Transport {
         }
 
         let limit = IrohConsoleRequest.readChunkLimit
+        let apiToken = token ?? ""
         return try await ConsoleStreamSession.open(
             capabilities: .iroh,
             fallbackRoute: .relay,
+            makeAPI: {
+                IrohAPITransport(token: apiToken, openStream: {
+                    let bi = try await connection.openBi()
+                    let send = bi.send()
+                    let recv = bi.recv()
+                    return APIStreamIO(
+                        write: { try await send.writeAll(buf: $0) },
+                        finish: { try await send.finish() },
+                        read: { try await recv.read(sizeLimit: limit) },
+                        cancel: {
+                            Task {
+                                try? await send.reset(errorCode: 0)
+                                try? await recv.stop(errorCode: 0)
+                            }
+                        })
+                })
+            },
             read: { try await recv.read(sizeLimit: limit) },
             onClose: {
                 try? connection.close(errorCode: 0, reason: Data("bye".utf8))

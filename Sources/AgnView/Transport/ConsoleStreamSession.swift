@@ -22,6 +22,9 @@ extension TransportError {
 final class ConsoleStreamSession: HubSession {
     let capabilities: Set<Capability>
     let hello: ConsoleFrame.Hello
+    /// The API route on this connection. Set only when the hello frame lists
+    /// the "api" capability and the opener supplied a factory.
+    let api: APITransport?
     let frames: AsyncThrowingStream<ConsoleFrame, Error>
 
     private let lock = NSLock()
@@ -37,8 +40,12 @@ final class ConsoleStreamSession: HubSession {
 
     /// Reads until the hello frame. An error frame before hello throws the
     /// mapped error: the hub's auth failure detail gives `.unauthorised`.
+    /// When `makeAPI` is given and the hello frame lists "api", the session
+    /// has the full capability set and offers that API route. Otherwise it
+    /// keeps `capabilities` (console only for iroh), as an older hub needs.
     static func open(capabilities: Set<Capability> = .iroh,
                      fallbackRoute: TransportRoute = .relay,
+                     makeAPI: (() -> APITransport)? = nil,
                      read: @escaping ChunkReader,
                      onClose: @escaping @Sendable () async -> Void) async throws -> ConsoleStreamSession {
         var framer = NDJSONFramer()
@@ -71,16 +78,23 @@ final class ConsoleStreamSession: HubSession {
         }
         let opened = hello ?? ConsoleFrame.Hello()
         let route = TransportRoute(hubValue: opened.transport) ?? fallbackRoute
-        let session = ConsoleStreamSession(capabilities: capabilities, hello: opened,
+        var api: APITransport?
+        var granted = capabilities
+        if opened.offersAPI, let makeAPI {
+            api = makeAPI()
+            granted = .irohAPI
+        }
+        let session = ConsoleStreamSession(capabilities: granted, hello: opened, api: api,
                                            route: route, onClose: onClose)
         session.start(pending: pending, framer: framer, read: read)
         return session
     }
 
-    private init(capabilities: Set<Capability>, hello: ConsoleFrame.Hello,
+    private init(capabilities: Set<Capability>, hello: ConsoleFrame.Hello, api: APITransport?,
                  route: TransportRoute, onClose: @escaping @Sendable () async -> Void) {
         self.capabilities = capabilities
         self.hello = hello
+        self.api = api
         self.currentRoute = route
         self.onClose = onClose
         var captured: AsyncThrowingStream<ConsoleFrame, Error>.Continuation!

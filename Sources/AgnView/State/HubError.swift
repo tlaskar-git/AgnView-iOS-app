@@ -24,6 +24,8 @@ enum HubError: Error, Equatable, LocalizedError {
             return UserMessages.authFailed
         case .transport(.rateLimited):
             return "The hub is busy. Try again in a moment."
+        case .transport(.notSupported):
+            return UserMessages.hubNeedsUpdate
         case .transport(.protocolViolation):
             return "The hub sent an answer this app does not understand."
         }

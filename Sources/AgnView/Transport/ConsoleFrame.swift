@@ -16,13 +16,19 @@ enum ConsoleFrame: Equatable, Codable {
         var protocolVersion: Int?
         var hostname: String?
         var transport: String?
+        /// What the hub offers on this connection, such as "console" and
+        /// "api". Nil from a hub before 0.1.12.
+        var capabilities: [String]?
 
         enum CodingKeys: String, CodingKey {
             case app
             case protocolVersion = "protocol"
             case hostname
             case transport
+            case capabilities
         }
+
+        var offersAPI: Bool { capabilities?.contains("api") ?? false }
     }
 
     struct LogEntry: Codable, Equatable {
@@ -124,6 +130,12 @@ enum ConsoleFrame: Equatable, Codable {
 
     /// Maps an error frame to a transport error.
     static func mapError(detail: String) -> TransportError {
-        detail == unauthorisedDetail ? .unauthorised : .protocolViolation
+        switch detail {
+        case unauthorisedDetail: return .unauthorised
+        case "rate_limited": return .rateLimited
+        case "timeout": return .timedOut
+        case "forbidden_path", "bad_request": return .notSupported
+        default: return .protocolViolation
+        }
     }
 }

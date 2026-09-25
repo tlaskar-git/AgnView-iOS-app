@@ -86,9 +86,11 @@ final class ScriptedSession: HubSession {
     let route: TransportRoute
     let capabilities: Set<Capability>
     let frames: AsyncThrowingStream<ConsoleFrame, Error>
+    let api: APITransport?
     private let continuation: AsyncThrowingStream<ConsoleFrame, Error>.Continuation
 
-    init(route: TransportRoute, capabilities: Set<Capability>? = nil) {
+    init(route: TransportRoute, capabilities: Set<Capability>? = nil, api: APITransport? = nil) {
+        self.api = api
         self.route = route
         self.capabilities = capabilities ?? (route == .lan ? .lan : .iroh)
         var captured: AsyncThrowingStream<ConsoleFrame, Error>.Continuation!
@@ -187,4 +189,32 @@ enum SampleJSON {
     """
 
     static let dispatch = #"{"status":"dispatched","agent":"claude_code","session_id":"sess-1","message":"Accepted."}"#
+}
+
+/// A hub API the test scripts by hand. Records every call.
+final class FakeAPITransport: APITransport {
+    struct Call: Equatable {
+        var method: String
+        var path: String
+        var body: Data?
+    }
+
+    private let lock = NSLock()
+    private var routes: [String: (Int, Data)] = [:]
+    private var recorded: [Call] = []
+
+    var calls: [Call] { lock.withLock { recorded } }
+
+    func route(_ method: String, _ path: String, _ status: Int, _ json: String) {
+        lock.withLock { routes["\(method) \(path)"] = (status, Data(json.utf8)) }
+    }
+
+    func send(method: String, path: String, body: Data?) async throws -> APIResponse {
+        let hit: (Int, Data)? = lock.withLock {
+            recorded.append(Call(method: method, path: path, body: body))
+            return routes["\(method) \(path)"]
+        }
+        guard let hit else { return APIResponse(status: 404, body: Data()) }
+        return APIResponse(status: hit.0, body: hit.1)
+    }
 }
