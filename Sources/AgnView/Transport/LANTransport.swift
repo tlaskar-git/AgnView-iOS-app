@@ -202,12 +202,8 @@ final class LANSession: HubSession {
                      URLQueryItem(name: "limit", value: String(limit))]
         if let after { query.append(URLQueryItem(name: "after_id", value: String(after))) }
         let data = try await transport.get("/api/console/logs", query: query)
-        let rows: [ConsoleFrame.LogEntry]
-        do {
-            rows = try JSONDecoder().decode([ConsoleFrame.LogEntry].self, from: data)
-        } catch {
-            throw TransportError.protocolViolation
-        }
+        // One unreadable row is dropped. It never fails the whole batch.
+        let rows = try HubList.decode(ConsoleFrame.LogEntry.self, from: data, decoder: JSONDecoder()).items
         var highest = after
         for row in rows.sorted(by: { ($0.id ?? 0) < ($1.id ?? 0) }) {
             if let id = row.id, let seen = after, id <= seen { continue }

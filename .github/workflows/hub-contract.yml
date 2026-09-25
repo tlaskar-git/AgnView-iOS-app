@@ -52,43 +52,25 @@ jobs:
           "$RUNNER_TEMP/hubenv/bin/pip" install --quiet ./hub
           "$RUNNER_TEMP/hubenv/bin/agnview" --help > /dev/null
 
-      - name: Prepare an empty home, a stub agent and a masked token
+      - name: Generate a masked token
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/home" "$RUNNER_TEMP/stubs" "$RUNNER_TEMP/probe"
-          printf '#!/bin/sh\necho "stub agent line one"\necho "stub agent line two"\nexit 0\n' > "$RUNNER_TEMP/stubs/codex"
-          chmod +x "$RUNNER_TEMP/stubs/codex"
           TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
           echo "::add-mask::$TOKEN"
-          PORT="$(python -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
           {
             echo "HUB_TOKEN=$TOKEN"
-            echo "HUB_PORT=$PORT"
+            echo "HUB_BIN=$RUNNER_TEMP/hubenv/bin/agnview"
           } >> "$GITHUB_ENV"
 
-      - name: Start the hub
-        run: |
-          set -euo pipefail
-          HOME="$RUNNER_TEMP/home" \
-          AGNVIEW_IROH=off \
-          AGENT_RELAY_TOKEN="$HUB_TOKEN" \
-          AGENT_RELAY_DB_PATH="$RUNNER_TEMP/home/hub.db" \
-          PATH="$RUNNER_TEMP/stubs:$PATH" \
-          nohup "$RUNNER_TEMP/hubenv/bin/agnview" serve --port "$HUB_PORT" > "$RUNNER_TEMP/hub.log" 2>&1 &
-          for i in $(seq 1 60); do
-            if curl -fsS -H "X-AgnView-Token: $HUB_TOKEN" "http://127.0.0.1:$HUB_PORT/api/mobile/status" > /dev/null 2>&1; then
-              echo "hub ready after $i tries"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "hub did not start; log follows (token is masked)"
-          tail -60 "$RUNNER_TEMP/hub.log"
-          exit 1
+      - name: Start a fresh hub for the probe
+        run: sh Tools/contract/start_hub.sh probe
 
       - name: Probe every endpoint the app calls
-        run: |
-          python Tools/contract/probe_hub.py "http://127.0.0.1:$HUB_PORT" "$RUNNER_TEMP/probe/${{ matrix.label }}"
+        run: python Tools/contract/probe_hub.py "http://127.0.0.1:$HUB_PORT" "$RUNNER_TEMP/probe/${{ matrix.label }}"
+
+      - name: Stop the probe hub
+        if: always()
+        run: kill "$HUB_PID" 2> /dev/null || true
 
       - name: Upload probe results
         if: always()
@@ -98,3 +80,13 @@ jobs:
           path: ${{ runner.temp }}/probe/${{ matrix.label }}
           if-no-files-found: warn
           retention-days: 7
+
+      - name: Start a fresh hub for the contract check
+        run: sh Tools/contract/start_hub.sh check
+
+      - name: Check the contract the app needs
+        run: python Tools/contract/check_contract.py "http://127.0.0.1:$HUB_PORT"
+
+      - name: Stop the check hub
+        if: always()
+        run: kill "$HUB_PID" 2> /dev/null || true

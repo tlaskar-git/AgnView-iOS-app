@@ -1,0 +1,25 @@
+{
+  "app": "AgnView",
+  "status": "healthy",
+  "endpoints": {
+    "local": "http://localhost:8765",
+    "localhost": "http://192.0.2.1:8765",
+    "lan": "http://192.0.2.1:8765",
+    "hostname": "http://hub.example.test:8765"
+  },
+  "bind_mode": "loopback",
+  "transport_label": "Loopback only",
+  "resolved_transport": "offline",
+  "iroh": {
+    "name": "iroh",
+    "state": "disabled",
+    "error": "AGNVIEW_IROH is set to off",
+    "ticket": null,
+    "node_id": null,
+    "relay_url": null,
+    "configured_relay_url": null,
+    "direct_addresses": [],
+    "connections": 0,
+    "last_resolved_transport": null
+  }
+}

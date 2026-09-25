@@ -1,0 +1,18 @@
+{
+  "detail": [
+    {
+      "type": "missing",
+      "loc": [
+        "body",
+        "agent"
+      ],
+      "msg": "Field required",
+      "input": {
+        "target_agent": "codex",
+        "prompt": "probe prompt",
+        "working_dir": null,
+        "session_id": null
+      }
+    }
+  ]
+}

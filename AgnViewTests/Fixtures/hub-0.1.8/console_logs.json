@@ -1,0 +1,29 @@
+[
+  {
+    "id": 1,
+    "agent": "codex",
+    "source": "user_input",
+    "content": "probe prompt",
+    "timestamp": "2026-09-25T10:23:12.161657+00:00",
+    "session_id": "sess-7755f582",
+    "metadata": {}
+  },
+  {
+    "id": 2,
+    "agent": "codex",
+    "source": "agent_stdout",
+    "content": "stub agent line one\nstub agent line two",
+    "timestamp": "2026-09-25T10:23:12.169460+00:00",
+    "session_id": "sess-7755f582",
+    "metadata": {}
+  },
+  {
+    "id": 3,
+    "agent": "codex",
+    "source": "system_notice",
+    "content": "Finished",
+    "timestamp": "2026-09-25T10:23:12.170930+00:00",
+    "session_id": "sess-7755f582",
+    "metadata": {}
+  }
+]

@@ -1,0 +1,46 @@
+{
+  "id": "job-probe-a",
+  "title": "Probe pipeline A",
+  "description": "Two tasks with a dependency",
+  "status": "in_progress",
+  "tasks": {
+    "a-build": {
+      "id": "a-build",
+      "job_id": "job-probe-a",
+      "title": "Build",
+      "description": "First task",
+      "assigned_agent": "claude_code",
+      "executed_by": "claude_code",
+      "dependencies": [],
+      "status": "completed",
+      "output_summary": "Built it",
+      "artifacts": [
+        "out.txt"
+      ],
+      "revisions": [],
+      "created_at": "2026-09-25T10:23:12.111523+00:00",
+      "updated_at": "2026-09-25T10:23:12.134978+00:00",
+      "completed_at": "2026-09-25T10:23:12.134978+00:00"
+    },
+    "a-review": {
+      "id": "a-review",
+      "job_id": "job-probe-a",
+      "title": "Review",
+      "description": "Second task",
+      "assigned_agent": "codex",
+      "executed_by": null,
+      "dependencies": [
+        "a-build"
+      ],
+      "status": "ready",
+      "output_summary": null,
+      "artifacts": [],
+      "revisions": [],
+      "created_at": "2026-09-25T10:23:12.111523+00:00",
+      "updated_at": "2026-09-25T10:23:12.134978+00:00",
+      "completed_at": null
+    }
+  },
+  "created_at": "2026-09-25T10:23:12.111523+00:00",
+  "updated_at": "2026-09-25T10:23:12.134978+00:00"
+}

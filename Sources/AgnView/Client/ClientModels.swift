@@ -190,18 +190,23 @@ struct PipelineTask: Codable, Equatable, Identifiable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(String.self, forKey: .id)
-        jobId = try c.decodeIfPresent(String.self, forKey: .jobId)
-        title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
-        description = try c.decodeIfPresent(String.self, forKey: .description)
-        assignedAgent = try c.decodeIfPresent(String.self, forKey: .assignedAgent)
-        status = try c.decodeIfPresent(TaskStatus.self, forKey: .status) ?? .unknown("")
-        dependencies = try c.decodeIfPresent([String].self, forKey: .dependencies) ?? []
-        outputSummary = try c.decodeIfPresent(String.self, forKey: .outputSummary)
+        guard let id = c.lenientString(forKey: .id) else {
+            throw DecodingError.keyNotFound(CodingKeys.id, .init(codingPath: c.codingPath,
+                                                                 debugDescription: "task id"))
+        }
+        self.id = id
+        jobId = c.lenientString(forKey: .jobId)
+        title = c.lenientString(forKey: .title) ?? ""
+        description = c.lenientString(forKey: .description)
+        assignedAgent = c.lenientString(forKey: .assignedAgent)
+        status = (try? c.decodeIfPresent(TaskStatus.self, forKey: .status)) ?? .unknown("")
+        dependencies = c.lenientStrings(forKey: .dependencies)
+        outputSummary = c.lenientString(forKey: .outputSummary)
     }
 }
 
-/// A multi-agent pipeline (GET /api/jobs).
+/// A multi-agent pipeline (GET /api/jobs). The hub sends `tasks` as an object
+/// keyed by task id. An array is accepted as well.
 struct Job: Codable, Equatable, Identifiable {
     let id: String
     let title: String
@@ -210,9 +215,12 @@ struct Job: Codable, Equatable, Identifiable {
     let createdAt: String?
     let updatedAt: String?
     let tasks: [PipelineTask]
+    /// Tasks the hub sent that could not be read and were left out.
+    let droppedTasks: Int
 
     init(id: String, title: String, description: String? = nil, status: JobStatus,
-         createdAt: String? = nil, updatedAt: String? = nil, tasks: [PipelineTask] = []) {
+         createdAt: String? = nil, updatedAt: String? = nil, tasks: [PipelineTask] = [],
+         droppedTasks: Int = 0) {
         self.id = id
         self.title = title
         self.description = description
@@ -220,6 +228,7 @@ struct Job: Codable, Equatable, Identifiable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.tasks = tasks
+        self.droppedTasks = droppedTasks
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -228,13 +237,40 @@ struct Job: Codable, Equatable, Identifiable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(String.self, forKey: .id)
-        title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
-        description = try c.decodeIfPresent(String.self, forKey: .description)
-        status = try c.decodeIfPresent(JobStatus.self, forKey: .status) ?? .unknown("")
-        createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
-        updatedAt = try c.decodeIfPresent(String.self, forKey: .updatedAt)
-        tasks = try c.decodeIfPresent([PipelineTask].self, forKey: .tasks) ?? []
+        guard let id = c.lenientString(forKey: .id) else {
+            throw DecodingError.keyNotFound(CodingKeys.id, .init(codingPath: c.codingPath,
+                                                                 debugDescription: "job id"))
+        }
+        self.id = id
+        title = c.lenientString(forKey: .title) ?? ""
+        description = c.lenientString(forKey: .description)
+        status = (try? c.decodeIfPresent(JobStatus.self, forKey: .status)) ?? .unknown("")
+        createdAt = c.lenientString(forKey: .createdAt)
+        updatedAt = c.lenientString(forKey: .updatedAt)
+        if let list = try? c.decode(LenientList<PipelineTask>.self, forKey: .tasks) {
+            tasks = list.items
+            droppedTasks = list.dropped
+        } else if let map = try? c.decode([String: Failable<PipelineTask>].self, forKey: .tasks) {
+            let good = map.values.compactMap { $0.value }
+            tasks = Job.ordered(good)
+            droppedTasks = map.count - good.count
+        } else {
+            tasks = []
+            droppedTasks = 0
+        }
+    }
+
+    /// Dependencies first, then by id, so the list reads in pipeline order.
+    static func ordered(_ tasks: [PipelineTask]) -> [PipelineTask] {
+        let byId = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        func depthOf(_ id: String, _ path: Set<String>) -> Int {
+            guard let task = byId[id], !path.contains(id) else { return 0 }
+            return task.dependencies.map { depthOf($0, path.union([id])) + 1 }.max() ?? 0
+        }
+        return tasks.sorted { left, right in
+            let l = depthOf(left.id, []), r = depthOf(right.id, [])
+            return l != r ? l < r : left.id < right.id
+        }
     }
 }
 
@@ -258,16 +294,37 @@ struct LiveSession: Codable, Equatable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case agent, sessionId, workingDirectory, busy, idleSeconds
+        case agent, sessionId, cliSessionId, workingDirectory, busy, idleSeconds, pid
     }
 
+    /// The hub sends session_id as null for a process it started without a
+    /// console conversation. Fall back to the CLI id, the pid, then agent and directory.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        agent = try c.decodeIfPresent(String.self, forKey: .agent)
-        sessionId = try c.decode(String.self, forKey: .sessionId)
-        workingDirectory = try c.decodeIfPresent(String.self, forKey: .workingDirectory)
-        busy = try c.decodeIfPresent(Bool.self, forKey: .busy) ?? false
-        idleSeconds = try c.decodeIfPresent(Double.self, forKey: .idleSeconds)
+        let agentText = c.lenientString(forKey: .agent)
+        let dirText = c.lenientString(forKey: .workingDirectory)
+        agent = agentText
+        workingDirectory = dirText
+        let primary = c.lenientString(forKey: .sessionId).flatMap { $0.isEmpty ? nil : $0 }
+        let cli = c.lenientString(forKey: .cliSessionId).flatMap { $0.isEmpty ? nil : $0 }
+        let pid = c.lenientString(forKey: .pid).map { "pid-" + $0 }
+        let composite = agentText.map { $0 + "@" + (dirText ?? "") }
+        guard let sid = primary ?? cli ?? pid ?? composite else {
+            throw DecodingError.keyNotFound(CodingKeys.sessionId, .init(codingPath: c.codingPath,
+                                                                        debugDescription: "session id"))
+        }
+        sessionId = sid
+        busy = c.lenientBool(forKey: .busy) ?? false
+        idleSeconds = c.lenientDouble(forKey: .idleSeconds)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(agent, forKey: .agent)
+        try c.encode(sessionId, forKey: .sessionId)
+        try c.encodeIfPresent(workingDirectory, forKey: .workingDirectory)
+        try c.encode(busy, forKey: .busy)
+        try c.encodeIfPresent(idleSeconds, forKey: .idleSeconds)
     }
 }
 
@@ -286,13 +343,15 @@ struct DispatchRequest: Codable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case targetAgent = "target_agent"
+        // The hub reads agent and working_directory. It answers 422 to the
+        // names the API document used (target_agent, working_dir).
+        case targetAgent = "agent"
         case prompt
-        case workingDir = "working_dir"
+        case workingDir = "working_directory"
         case sessionId = "session_id"
     }
 
-    /// Encodes nil optionals as JSON null, as the spec lists them nullable.
+    /// Encodes nil optionals as JSON null, which the hub accepts for both.
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(targetAgent, forKey: .targetAgent)
@@ -323,10 +382,10 @@ struct DispatchResponse: Codable, Equatable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        status = try? c.decodeIfPresent(String.self, forKey: .status)
-        agent = try? c.decodeIfPresent(String.self, forKey: .agent)
-        sessionId = try? c.decodeIfPresent(String.self, forKey: .sessionId)
-        message = try? c.decodeIfPresent(String.self, forKey: .message)
+        status = c.lenientString(forKey: .status)
+        agent = c.lenientString(forKey: .agent)
+        sessionId = c.lenientString(forKey: .sessionId)
+        message = c.lenientString(forKey: .message)
     }
 }
 
