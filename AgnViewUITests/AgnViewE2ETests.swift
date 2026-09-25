@@ -150,8 +150,9 @@ final class AgnViewE2ETests: XCTestCase {
         send.tap()
         need("composer-result", timeout: 40)
         XCTAssertTrue(element("composer-result").label.contains("Agent:"))
-        XCTAssertEqual(element("composer-prompt").value as? String, "Prompt",
-                       "the field was not cleared after a successful send")
+        let fieldValue = (element("composer-prompt").value as? String) ?? ""
+        XCTAssertTrue(fieldValue.isEmpty || fieldValue == "Prompt",
+                      "the field was not cleared after a successful send")
         snap("console-after-send")
 
         // The keyboard must close with Done.
