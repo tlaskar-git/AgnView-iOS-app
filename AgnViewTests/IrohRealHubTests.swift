@@ -118,27 +118,33 @@ final class IrohRealHubTests: XCTestCase {
         // Model, effort and files go through the dispatch call, and the stub
         // agent prints the arguments it was given.
         let marker = "e2e-effort-\(UUID().uuidString.prefix(8))"
+        report("E2E-STEP connected, dispatching")
         let response = try await client.dispatch(DispatchRequest(targetAgent: "codex", prompt: marker,
                                                                  model: "gpt-5", effort: "low",
                                                                  files: ["README.md"]))
         XCTAssertEqual(response.status, "dispatched")
-        let entry: ConsoleFrame.LogEntry
-        do {
-            entry = try await waitForLog(session, seconds: 60) { entry in
-                let content = entry.content ?? ""
-                return content.contains("stub args") && content.contains("reasoning_effort=low")
-                    && content.contains("-m gpt-5") && content.contains("[Context Files: README.md]")
-            }
-        } catch {
-            // Say what the hub did log, so a failure can be read from the run.
-            report("E2E-DEBUG the wait ended with \(error)")
-            let rows = (try? await client.logs(limit: 12)) ?? []
-            for row in rows {
+        report("E2E-STEP dispatched, reading the log")
+
+        // The stub prints its arguments as the agent's reply. Read the log
+        // through the API until the reply is there.
+        func carriesTheChoices(_ content: String) -> Bool {
+            content.contains("stub args") && content.contains("reasoning_effort=low")
+                && content.contains("-m gpt-5") && content.contains("[Context Files: README.md]")
+        }
+        var seen = false
+        var lastRows: [ConsoleFrame.LogEntry] = []
+        let deadline = Date().addingTimeInterval(60)
+        while !seen, Date() < deadline {
+            lastRows = try await client.logs(limit: 60)
+            seen = lastRows.contains { carriesTheChoices($0.content ?? "") }
+            if !seen { try await Task.sleep(nanoseconds: 2_000_000_000) }
+        }
+        if !seen {
+            for row in lastRows.suffix(12) {
                 report("E2E-DEBUG \(row.agent ?? "-") \(row.source ?? "-") \(String((row.content ?? "").prefix(200)))")
             }
-            throw error
         }
-        XCTAssertNotNil(entry.id)
+        XCTAssertTrue(seen, "the agent never printed the model, effort and files it was given")
         report("E2E-PASS model and effort reached the agent over iroh")
 
         // Sessions refresh: the live sessions and the newest log rows.
