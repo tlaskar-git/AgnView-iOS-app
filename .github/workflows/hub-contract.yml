@@ -1,0 +1,100 @@
+name: hub-contract
+
+on:
+  push:
+    branches:
+      - "bot/p4-*"
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hub-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hub-contract:
+    name: hub-contract (${{ matrix.label }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: ${{ matrix.allow_fail }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: "0.1.8"
+            ref: "v0.1.8"
+            allow_fail: false
+          - label: "main"
+            ref: "main"
+            allow_fail: true
+    steps:
+      - name: Checkout app repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Checkout hub repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: tlaskar-git/AgnView
+          ref: ${{ matrix.ref }}
+          path: hub
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install the hub
+        run: |
+          python -m venv "$RUNNER_TEMP/hubenv"
+          "$RUNNER_TEMP/hubenv/bin/pip" install --quiet ./hub
+          "$RUNNER_TEMP/hubenv/bin/agnview" --help > /dev/null
+
+      - name: Prepare an empty home, a stub agent and a masked token
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/home" "$RUNNER_TEMP/stubs" "$RUNNER_TEMP/probe"
+          printf '#!/bin/sh\necho "stub agent line one"\necho "stub agent line two"\nexit 0\n' > "$RUNNER_TEMP/stubs/codex"
+          chmod +x "$RUNNER_TEMP/stubs/codex"
+          TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          echo "::add-mask::$TOKEN"
+          PORT="$(python -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
+          {
+            echo "HUB_TOKEN=$TOKEN"
+            echo "HUB_PORT=$PORT"
+          } >> "$GITHUB_ENV"
+
+      - name: Start the hub
+        run: |
+          set -euo pipefail
+          HOME="$RUNNER_TEMP/home" \
+          AGNVIEW_IROH=off \
+          AGENT_RELAY_TOKEN="$HUB_TOKEN" \
+          AGENT_RELAY_DB_PATH="$RUNNER_TEMP/home/hub.db" \
+          PATH="$RUNNER_TEMP/stubs:$PATH" \
+          nohup "$RUNNER_TEMP/hubenv/bin/agnview" serve --port "$HUB_PORT" > "$RUNNER_TEMP/hub.log" 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS -H "X-AgnView-Token: $HUB_TOKEN" "http://127.0.0.1:$HUB_PORT/api/mobile/status" > /dev/null 2>&1; then
+              echo "hub ready after $i tries"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "hub did not start; log follows (token is masked)"
+          tail -60 "$RUNNER_TEMP/hub.log"
+          exit 1
+
+      - name: Probe every endpoint the app calls
+        run: |
+          python Tools/contract/probe_hub.py "http://127.0.0.1:$HUB_PORT" "$RUNNER_TEMP/probe/${{ matrix.label }}"
+
+      - name: Upload probe results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hub-probe-${{ matrix.label }}
+          path: ${{ runner.temp }}/probe/${{ matrix.label }}
+          if-no-files-found: warn
+          retention-days: 7
