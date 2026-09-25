@@ -106,6 +106,15 @@ jobs:
           set +x
           xcodebuild -resolvePackageDependencies -scheme AgnView
 
+      - name: Show the software keyboard
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          set +x
+          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b || true
+
       - name: Build and test
         env:
           AGNVIEW_MOCK_HUB_URL: http://127.0.0.1:18081

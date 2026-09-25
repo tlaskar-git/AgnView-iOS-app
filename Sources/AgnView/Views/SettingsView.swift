@@ -103,11 +103,9 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             SectionTitle("About")
             HStack {
-                Text("Version")
-                    .foregroundStyle(Theme.textSecondary)
-                Spacer()
                 Text(versionText)
                     .foregroundStyle(Theme.textMain)
+                Spacer()
             }
             .card()
             .accessibilityElement(children: .combine)
@@ -127,13 +125,19 @@ struct SettingsView: View {
         .accessibilityIdentifier("unpair-current")
     }
 
+    /// The marketing version only, such as "Version 1.0.1". The build number
+    /// is never shown.
     private var versionText: String {
-        let info = Bundle.main.infoDictionary
-        let short = info?["CFBundleShortVersionString"] as? String ?? "Unknown"
-        if let build = info?["CFBundleVersion"] as? String {
-            return short + " (" + build + ")"
-        }
-        return short
+        AppVersion.text(from: Bundle.main.infoDictionary)
+    }
+}
+
+/// Reads the version line for Settings.
+enum AppVersion {
+    static func text(from info: [String: Any]?) -> String {
+        let short = (info?["CFBundleShortVersionString"] as? String)?
+            .trimmingCharacters(in: .whitespaces) ?? ""
+        return short.isEmpty ? "Unknown" : "Version " + short
     }
 }
 

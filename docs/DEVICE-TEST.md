@@ -32,9 +32,26 @@ Use this list to test the TestFlight build on a real iPhone against the AgnView 
    - [ ] Claude Code replies.
    - [ ] Codex replies.
    - [ ] AntiGravity replies.
-8. Open **Sessions**, **Pipelines** and **Usage**.
+8. In the Console composer, check the controls.
+   - [ ] The agent chips, **Model**, **Effort**, the paperclip and **Send** show in one card.
+   - [ ] The prompt field grows to four lines.
+   - [ ] Tap the prompt field. The keyboard bar shows **Model** and **Effort** on the left and **Done** on the right. Nothing sits over **Send**.
+   - [ ] **Model** and **Effort** list the choices for the agent you picked. Send a prompt with a model and an effort chosen. The agent replies.
+   - [ ] Tap the paperclip. **From this computer** lists files on the PC. Tick one and tap **Attach**. Send the prompt. The agent gets the file name.
+   - [ ] **From Files, iCloud or OneDrive** and **From Photos** show greyed out with "Needs AgnView 0.1.13 on your computer".
+9. Open **Sessions**, **Pipelines** and **Usage**.
    - [ ] Each screen loads.
-   - [ ] Usage shows cards only for the providers the hub reports.
+   - [ ] Sessions: tap **Refresh**, and pull the list down. Both read the hub again and the line reads "Updated just now".
+   - [ ] Usage shows cards only for the providers the hub reports. Each card shows its windows with a bar, the time to reset and the breakdown rows.
+   - [ ] "Not measured yet" shows only on a window the hub gave no figure for.
+   - [ ] Usage: tap **Refresh**. The hub reads every provider again and the cards update.
+   - [ ] Pipelines: tap the plus button. The **New pipeline** sheet fills the screen. Leave the title empty and tap **Create**. The sheet says what is missing.
+   - [ ] Fill in a title, one task title and attach a file with **Attach**. Tap **Create**. The new pipeline opens and the task description ends with "[Context Files: ...]".
+   - [ ] Make two tasks wait for each other. The sheet names the tasks and does not create the pipeline.
+   - [ ] The three dots on a pipeline offer **Request revision**, **Mark failed** and **Delete pipeline**.
+10. Open **Settings**.
+   - [ ] The version reads like "Version 1.0.1", with no build number.
+   - [ ] The Console status line reads "<machine name> is healthy" and the route pill shows **LAN**.
 
 If anything fails, write down the screen, the route label and the exact on-screen message.
 
@@ -48,11 +65,12 @@ This part needs hub 0.1.12 or later. The phone reaches the hub over iroh and use
 4. [ ] Console live output continues.
 5. [ ] No banner about the Wi-Fi shows.
 6. [ ] Send a short prompt to an installed agent. The composer is enabled and the agent replies in Console.
-7. [ ] Pipelines loads the jobs.
-8. [ ] Usage loads and shows a fresh reading.
-9. [ ] Sessions lists the live sessions from the hub. It does not show "Showing sessions seen in the log stream".
-10. Turn Wi-Fi back on.
-11. [ ] The route label returns to **LAN**.
+7. [ ] Pipelines loads the jobs. The plus button and **Delete pipeline** stay off and the screen says this needs the same Wi-Fi. **Request revision** and **Mark failed** still work.
+8. [ ] Usage loads and shows a fresh reading. **Refresh** reads the figures the hub already holds.
+9. [ ] Sessions lists the live sessions from the hub. It does not show "Showing sessions seen in the log stream". **Refresh** works.
+10. [ ] Console: **Model** and **Effort** offer Default, Low, Medium and High. The model list has Default only. The paperclip says attaching computer files needs the same Wi-Fi.
+11. Turn Wi-Fi back on.
+12. [ ] The route label returns to **LAN**.
 
 With a hub older than 0.1.12 the phone shows this instead:
 

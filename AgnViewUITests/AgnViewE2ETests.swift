@@ -138,9 +138,10 @@ final class AgnViewE2ETests: XCTestCase {
         let status = element("status-line")
         need("status-line")
         let connected = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "label BEGINSWITH 'Connected'"), object: status)
+            predicate: NSPredicate(format: "label CONTAINS 'is healthy'"), object: status)
         XCTAssertEqual(XCTWaiter().wait(for: [connected], timeout: 40), .completed,
                        "status line never showed the hub status")
+        XCTAssertFalse(status.label.contains("Loopback"), "the status line still names the transport: \(status.label)")
         snap("console-connected")
 
         typePrompt("hello from the end to end run")
@@ -182,6 +183,137 @@ final class AgnViewE2ETests: XCTestCase {
             || element("usage-empty").waitForExistence(timeout: 5)
         XCTAssertTrue(usageShown, "Usage showed neither a card nor an empty state")
         XCTAssertFalse(element("usage-error").exists, "the real hub made Usage fail")
+    }
+
+    // MARK: Phase A
+
+    /// Opens a Model or Effort menu and picks an option, by identifier or by
+    /// name. The lists arrive a moment after the connection, so it retries.
+    private func choose(menu: String, optionId: String, name: String) {
+        let deadline = Date().addingTimeInterval(60)
+        while Date() < deadline {
+            element(menu).tap()
+            let byId = element(menu + "-option-" + optionId)
+            if byId.waitForExistence(timeout: 3) {
+                byId.tap()
+                return
+            }
+            let byName = app.buttons[name]
+            if byName.waitForExistence(timeout: 2) {
+                byName.tap()
+                return
+            }
+            element("console-log").tap()
+            Thread.sleep(forTimeInterval: 2)
+        }
+        XCTFail("\(menu) never offered \(name)")
+    }
+
+    /// The model and effort chosen in the composer reach the agent. The stub
+    /// agent prints its arguments, and they come back on the console.
+    func testModelAndEffortReachTheAgentAgainstRealHub() throws {
+        try launch(hubKey: "AGNVIEW_MOCK_HUB_URL")
+        waitForComposer()
+        element("composer-agent-codex").tap()
+        choose(menu: "composer-model", optionId: "gpt-5", name: "GPT-5")
+        choose(menu: "composer-effort", optionId: "low", name: "Low Reasoning")
+        snap("model-effort-chosen")
+        typePrompt("model and effort check")
+        let send = element("composer-send")
+        XCTAssertTrue(send.isEnabled, "Send stayed disabled with text in the field")
+        send.tap()
+        need("composer-result", timeout: 40)
+        XCTAssertTrue(element("composer-result").label.contains("Agent: Codex"))
+        let done = element("keyboard-done")
+        if done.exists { done.tap() }
+        let row = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'console-row' AND label CONTAINS 'reasoning_effort=low'"))
+            .firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 90), "the agent never printed the effort it was given")
+        XCTAssertTrue(row.label.contains("-m gpt-5"), "the agent was not given the chosen model: \(row.label)")
+        snap("model-effort-reply")
+    }
+
+    /// A pipeline made in the app is on the hub and in the list. When the hub
+    /// lists files, one is attached and lands in the task description.
+    func testCreatePipelineAgainstRealHub() throws {
+        try launch(hubKey: "AGNVIEW_MOCK_HUB_URL")
+        waitForComposer()
+        open("Pipelines")
+        need("pipelines-new")
+        element("pipelines-new").tap()
+        need("new-pipeline")
+        let name = "E2E made in the app " + String(UUID().uuidString.prefix(6))
+        let title = element("np-title")
+        title.tap()
+        title.typeText(name)
+        let taskTitle = element("np-task-title")
+        taskTitle.tap()
+        taskTitle.typeText("Write it")
+        let keyboardDone = element("np-keyboard-done")
+        if keyboardDone.waitForExistence(timeout: 3) { keyboardDone.tap() }
+
+        element("np-attach").tap()
+        need("attach-sheet")
+        need("attach-source-files")
+        XCTAssertFalse(element("attach-source-files").isEnabled)
+        let attached = element("attach-file-row").waitForExistence(timeout: 30)
+        if attached {
+            element("attach-file-row").tap()
+            element("attach-confirm").tap()
+            need("np-attachment")
+        } else {
+            // The hub on this runner lists no files, so the attach step is skipped.
+            print("E2E-NOTE the hub listed no files, attach step skipped")
+            element("attach-cancel").tap()
+        }
+        snap("new-pipeline")
+        element("np-create").tap()
+
+        need("job-detail", timeout: 40)
+        XCTAssertEqual(element("job-detail-title").label, name)
+        let taskRow = element("task-row")
+        XCTAssertTrue(taskRow.waitForExistence(timeout: 10))
+        if attached {
+            XCTAssertTrue(taskRow.label.contains("[Context Files:"), "no context files in the task: \(taskRow.label)")
+        }
+        snap("pipeline-created")
+
+        // Back in the list, the new pipeline is there.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        need("screen-pipelines")
+        let listed = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'job-row' AND label CONTAINS %@", name)).firstMatch
+        XCTAssertTrue(listed.waitForExistence(timeout: 30), "the new pipeline is not in the list")
+        snap("pipeline-in-list")
+    }
+
+    /// Refresh in Sessions reads the hub again and says when.
+    func testSessionsRefreshAgainstRealHub() throws {
+        try launch(hubKey: "AGNVIEW_MOCK_HUB_URL")
+        waitForComposer()
+        open("Sessions")
+        need("sessions-refresh")
+        element("sessions-refresh").tap()
+        let updated = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH 'Updated'"),
+                                                object: element("sessions-updated"))
+        XCTAssertEqual(XCTWaiter().wait(for: [updated], timeout: 40), .completed,
+                       "Sessions never showed when it was updated")
+        XCTAssertFalse(element("sessions-error").exists, "Refresh made the Sessions panel fail")
+        snap("sessions-refreshed")
+    }
+
+    /// Usage draws the real hub's windows, or the hub's own reason, and Refresh works.
+    func testUsageRefreshAgainstRealHub() throws {
+        try launch(hubKey: "AGNVIEW_MOCK_HUB_URL")
+        waitForComposer()
+        open("Usage")
+        need("usage-refresh")
+        need("provider-claude", timeout: 40)
+        element("usage-refresh").tap()
+        need("usage-age", timeout: 60)
+        XCTAssertFalse(element("usage-error").exists, "Refresh made Usage fail")
+        snap("usage-refreshed")
     }
 
     /// A malformed answer for one request fails that panel only.

@@ -13,7 +13,10 @@ struct LANAPITransport: APITransport {
             components.query = String(path[path.index(after: mark)...])
             query = components.queryItems ?? []
         }
-        let request = try lan.makeRequest(route, method: method, query: query, body: body)
+        // The hub reads every provider again for a usage refresh, which takes
+        // longer than an ordinary call.
+        let timeout: TimeInterval? = route == HubPath.usageRefreshAll ? 60 : nil
+        let request = try lan.makeRequest(route, method: method, query: query, body: body, timeout: timeout)
         let result: (Data, URLResponse)
         do {
             result = try await lan.session.data(for: request)

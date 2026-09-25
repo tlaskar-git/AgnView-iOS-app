@@ -1,0 +1,157 @@
+{
+  "installed_agents": {
+    "claude_code": {
+      "installed": true,
+      "path": "/usr/local/bin/claude"
+    },
+    "codex": {
+      "installed": true,
+      "path": "/usr/local/bin/codex"
+    },
+    "antigravity": {
+      "installed": false,
+      "path": null
+    },
+    "ollama": {
+      "installed": false,
+      "path": null
+    }
+  },
+  "installed_clis": [
+    {
+      "id": "claude_code",
+      "name": "Claude Code",
+      "available": true
+    },
+    {
+      "id": "codex",
+      "name": "Codex / ChatGPT",
+      "available": true
+    },
+    {
+      "id": "antigravity",
+      "name": "AntiGravity (AGY)",
+      "available": false
+    }
+  ],
+  "connected_providers": [
+    "claude",
+    "chatgpt"
+  ],
+  "total_accounts": 2,
+  "skills": [
+    {
+      "name": "/goal",
+      "description": "Example skill",
+      "type": "slash_command"
+    }
+  ],
+  "models": {
+    "claude_code": [
+      {
+        "id": "example-large-2",
+        "name": "Example Large 2"
+      },
+      {
+        "id": "example-large-1",
+        "name": "Example Large 1"
+      },
+      {
+        "id": "example-small",
+        "name": "Example Small"
+      }
+    ],
+    "codex": [
+      {
+        "id": "example-codex",
+        "name": "Example Codex"
+      },
+      {
+        "id": "example-mini",
+        "name": "Example Mini"
+      }
+    ],
+    "antigravity": [
+      {
+        "id": "example-flash",
+        "name": "Example Flash"
+      }
+    ],
+    "all": [
+      {
+        "id": "auto",
+        "name": "Auto"
+      }
+    ]
+  },
+  "efforts": [
+    "low",
+    "medium",
+    "high"
+  ],
+  "efforts_by_provider": {
+    "claude_code": [
+      {
+        "id": "default",
+        "name": "Default"
+      },
+      {
+        "id": "low",
+        "name": "Low Effort"
+      },
+      {
+        "id": "medium",
+        "name": "Medium Effort"
+      },
+      {
+        "id": "high",
+        "name": "High Effort"
+      },
+      {
+        "id": "max",
+        "name": "Maximum Effort"
+      }
+    ],
+    "codex": [
+      {
+        "id": "default",
+        "name": "Default"
+      },
+      {
+        "id": "low",
+        "name": "Low Reasoning"
+      },
+      {
+        "id": "high",
+        "name": "High Reasoning"
+      }
+    ],
+    "all": [
+      {
+        "id": "default",
+        "name": "Auto"
+      },
+      {
+        "id": "high",
+        "name": "High Reasoning"
+      }
+    ]
+  },
+  "slash_commands_by_provider": {
+    "claude_code": [
+      {
+        "name": "/help",
+        "description": "Example"
+      }
+    ]
+  },
+  "current_cwd": "/home/example/project",
+  "default_cwd": "/home/example/project",
+  "default_cwd_by_provider": {
+    "claude_code": "/home/example/project"
+  },
+  "recent_paths": [
+    "/home/example/project"
+  ],
+  "autostart_enabled": false
+}

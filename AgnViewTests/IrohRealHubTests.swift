@@ -106,6 +106,57 @@ final class IrohRealHubTests: XCTestCase {
         report("E2E-PASS dispatch output seen on the console stream")
     }
 
+    /// Phase A over iroh: model, effort and files reach the agent, Sessions
+    /// refresh reads the live sessions and the log, and the calls the hub
+    /// keeps to the LAN are refused.
+    func testModelEffortSessionsAndLANOnlyRoutesOverIroh() async throws {
+        let session = try await connect()
+        defer { Task { await session.close() } }
+        let api = try XCTUnwrap(session.api)
+        let client = HubClient(api: api)
+
+        // Model, effort and files go through the dispatch call, and the stub
+        // agent prints the arguments it was given.
+        let marker = "e2e-effort-\(UUID().uuidString.prefix(8))"
+        let response = try await client.dispatch(DispatchRequest(targetAgent: "codex", prompt: marker,
+                                                                 model: "gpt-5", effort: "low",
+                                                                 files: ["README.md"]))
+        XCTAssertEqual(response.status, "dispatched")
+        let entry = try await waitForLog(session, seconds: 60) { entry in
+            let content = entry.content ?? ""
+            return content.contains("stub args") && content.contains("reasoning_effort=low")
+                && content.contains("-m gpt-5")
+        }
+        XCTAssertNotNil(entry.id)
+        report("E2E-PASS model and effort reached the agent over iroh")
+
+        // Sessions refresh: the live sessions and the newest log rows.
+        let live = try await client.liveSessions()
+        let rows = try await client.logs(limit: 50)
+        XCTAssertFalse(rows.isEmpty, "the log holds the dispatch just made")
+        report("E2E-PASS sessions refresh read \(live.count) live sessions and \(rows.count) log rows")
+
+        // The hub keeps these to the LAN, so iroh refuses them and the app
+        // switches the matching controls off.
+        let lanOnly: [(String, String, Data?)] = [
+            ("GET", HubPath.capabilities, nil),
+            ("GET", HubPath.files, nil),
+            ("POST", HubPath.usageRefreshAll, Data("{}".utf8)),
+            ("POST", HubPath.jobs, Data(#"{"title":"x","tasks":[]}"#.utf8)),
+            ("DELETE", HubPath.job("no-such-job"), nil),
+        ]
+        for (method, path, body) in lanOnly {
+            do {
+                _ = try await api.send(method: method, path: path, body: body)
+                XCTFail("\(method) \(path) must be refused over iroh")
+            } catch {
+                XCTAssertEqual(error as? TransportError, .notSupported, "\(method) \(path)")
+            }
+        }
+        XCTAssertTrue(Set<Capability>.irohAPI.isDisjoint(with: Capability.lanOnly))
+        report("E2E-PASS LAN only calls refused over iroh")
+    }
+
     func testRealHubRejectsAWrongKey() async throws {
         do {
             let session = try await connect(key: "wrong-test-value")

@@ -1,0 +1,8 @@
+{
+  "files": [
+    "README.md",
+    "docs/example-notes.md",
+    "src/example.py"
+  ],
+  "cwd": "/home/example/project"
+}

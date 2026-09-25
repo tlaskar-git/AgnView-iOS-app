@@ -9,6 +9,16 @@ enum Capability: Hashable, CaseIterable {
     case usage
     case jobs
     case sessions
+    /// GET /api/system/capabilities and /api/system/files. Hub 0.1.12 serves
+    /// them on the LAN only, so an iroh session does not have this one.
+    case catalogue
+    /// POST /api/jobs and DELETE /api/jobs/{id}. LAN only in hub 0.1.12.
+    case manageJobs
+    /// POST /api/usage/refresh-all. LAN only in hub 0.1.12.
+    case usageRefresh
+
+    /// The capabilities the hub allowlist for iroh does not include.
+    static let lanOnly: Set<Capability> = [.catalogue, .manageJobs, .usageRefresh]
 }
 
 /// The rung a session landed on.
@@ -99,5 +109,5 @@ extension Set where Element == Capability {
     /// Console only: an iroh session to a hub without the remote API.
     static var iroh: Set<Capability> { [.consoleStream] }
     /// An iroh session to a hub that serves the mobile API.
-    static var irohAPI: Set<Capability> { Set(Capability.allCases) }
+    static var irohAPI: Set<Capability> { Set(Capability.allCases).subtracting(Capability.lanOnly) }
 }

@@ -24,13 +24,18 @@ struct UsageAccount: Codable, Equatable, Identifiable {
     let hasTokens: Bool
     let hasCost: Bool
     let hasRequests: Bool
+    /// The hub's rendered usage block (windows, source, age). Nil from a hub
+    /// that sends only the flat fields.
+    let usage: UsageDetail?
 
     init(id: String, name: String, provider: String, planName: String?, tokensUsed: Int,
          tokensLimit: Int?, costUsed: Double, costLimit: Double?, requestsCount: Int,
          lastProbed: String?, isActive: Bool, status: String? = nil, planLabel: String? = nil,
          percentUsed: Double? = nil, sessionPercentUsed: Double? = nil,
          weeklyPercentUsed: Double? = nil, errorMessage: String? = nil,
-         hasTokens: Bool = true, hasCost: Bool = true, hasRequests: Bool = true) {
+         hasTokens: Bool = true, hasCost: Bool = true, hasRequests: Bool = true,
+         usage: UsageDetail? = nil) {
+        self.usage = usage
         self.hasTokens = hasTokens
         self.hasCost = hasCost
         self.hasRequests = hasRequests
@@ -60,7 +65,7 @@ struct UsageAccount: Codable, Equatable, Identifiable {
         case id, name, provider, planName, planLabel, tokensUsed, tokensLimit
         case costUsed, costUsedUsd, costLimit, costLimitUsd
         case requestsCount, requestsUsed, lastProbed, lastChecked, isActive
-        case status, percentUsed, sessionPercentUsed, weeklyPercentUsed, errorMessage
+        case status, percentUsed, sessionPercentUsed, weeklyPercentUsed, errorMessage, usage
     }
 
     init(from decoder: Decoder) throws {
@@ -94,6 +99,7 @@ struct UsageAccount: Codable, Equatable, Identifiable {
         sessionPercentUsed = c.lenientDouble(forKey: .sessionPercentUsed)
         weeklyPercentUsed = c.lenientDouble(forKey: .weeklyPercentUsed)
         errorMessage = c.lenientString(forKey: .errorMessage)
+        usage = (try? c.decodeIfPresent(UsageDetail.self, forKey: .usage)) ?? nil
     }
 
     func encode(to encoder: Encoder) throws {
@@ -115,6 +121,7 @@ struct UsageAccount: Codable, Equatable, Identifiable {
         try c.encodeIfPresent(sessionPercentUsed, forKey: .sessionPercentUsed)
         try c.encodeIfPresent(weeklyPercentUsed, forKey: .weeklyPercentUsed)
         try c.encodeIfPresent(errorMessage, forKey: .errorMessage)
+        try c.encodeIfPresent(usage, forKey: .usage)
     }
 
     static func decodeList(from data: Data) throws -> [UsageAccount] {

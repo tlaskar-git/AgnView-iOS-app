@@ -14,7 +14,7 @@ stubs="$RUNNER_TEMP/stubs-e2e"
 mkdir -p "$home" "$stubs"
 
 for name in claude codex; do
-  printf '#!/bin/sh\necho "stub agent line one"\necho "stub agent line two"\nexit 0\n' > "$stubs/$name"
+  printf '#!/bin/sh\necho "stub agent line one"\necho "stub agent line two"\necho "stub args: $*"\nexit 0\n' > "$stubs/$name"
   chmod +x "$stubs/$name"
 done
 

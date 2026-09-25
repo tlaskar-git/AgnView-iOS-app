@@ -39,28 +39,65 @@ STATUS = {
 }
 
 
-def _account(acc_id, provider, name, tokens, limit, cost, cost_limit, requests, checked, status):
+def _window(label, amount, percent, countdown, sub=None, severity=None, active=False, breakdown=None):
+    return {
+        "key": label.lower().replace(" ", "_"), "label": label, "sub_label": sub,
+        "unit": "percent" if percent is not None else "requests",
+        "amount_text": amount, "percent_used": percent, "has_bar": percent is not None,
+        "used": percent, "limit": 100.0 if percent is not None else None,
+        "severity": severity, "is_active": active, "window_start": None, "window_end": None,
+        "countdown_text": countdown, "breakdown": breakdown or [],
+    }
+
+
+def _account(acc_id, provider, name, plan, source, age_seconds, stale, windows, status,
+             tokens=None, requests=None, error=None):
+    checked = NOW if windows else None
     return {
         "id": acc_id, "provider": provider, "name": name, "auth_type": "session_token",
-        "credential": "****", "org_id": None, "plan_name": "Example plan",
+        "credential": "****", "org_id": None, "plan_name": plan,
         "requests_used": requests, "requests_limit": None, "requests_remaining": None,
-        "tokens_used": tokens, "tokens_limit": limit, "tokens_remaining": None,
-        "cost_used_usd": cost, "cost_limit_usd": cost_limit, "reset_time": None,
+        "tokens_used": tokens, "tokens_limit": None, "tokens_remaining": None,
+        "cost_used_usd": None, "cost_limit_usd": None, "reset_time": None,
         "percent_used": None, "status": status, "last_checked": checked,
-        "error_message": None if status == "active" else "Placeholder: nothing measured.",
-        "base_url": None, "plan_label": None, "session_percent_used": None,
-        "weekly_percent_used": None, "observation": None,
-        "usage": {"source": "none", "confidence": "unavailable", "measured_at": checked,
-                  "age_seconds": 0.0, "age_text": "just measured", "is_stale": False,
-                  "error": None, "plan_name": None, "plan_label": None, "windows": []},
+        "error_message": error, "base_url": None, "plan_label": plan,
+        "session_percent_used": None, "weekly_percent_used": None,
+        "observation": {"source": "placeholder", "windows": [], "plan": None},
+        "usage": {"source": "placeholder", "source_label": source, "confidence": "high",
+                  "measured_at": checked, "age_seconds": age_seconds,
+                  "age_text": "measured 3m ago", "is_stale": stale, "error": error,
+                  "plan_name": plan, "plan_label": plan, "windows": windows},
         "masked_credential": "****", "last_synced_at": checked, "needs_telemetry_sync": False,
     }
 
 
+# Order as the real hub returns it: AntiGravity, ChatGPT, Claude, Gemini. The
+# windows follow render.py of hub 0.1.12. amount_text is null when nothing was
+# measured for a window.
 USAGE = [
-    _account("acc-claude", "claude", "Example Claude", 120000, 500000, 12.5, 100.0, 42, NOW, "active"),
-    _account("acc-chatgpt", "chatgpt", "Example ChatGPT", 80000, 400000, 8.0, 50.0, 21, NOW, "active"),
-    _account("acc-gemini", "gemini", "Example Gemini", None, None, None, None, None, None, "unavailable"),
+    _account("acc-agy", "antigravity", "Example AntiGravity", "Pro", "AntiGravity usage panel", 180.0, False, [
+        _window("Five Hour Limit", "91% used", 91.0, "Resets in 1h 12m", severity="warning", active=True, breakdown=[
+            _window("Gemini models", "91% used", 91.0, "Resets in 1h 12m", sub="Example Flash, Example Pro"),
+            _window("Claude and GPT models", "0% used", 0.0, None, sub="Example models"),
+        ]),
+        _window("Weekly Limit", "48% used", 48.0, "Resets in 5d 4h"),
+    ], "warning", tokens=402500, requests=58),
+    _account("acc-chatgpt", "chatgpt", "Example ChatGPT", "Plus", "ChatGPT account usage", 2520.0, True, [
+        _window("Session, 5 hours", "1% used", 1.0, "Resets in 3h 12m"),
+        _window("Weekly", "2% used", 2.0, "Resets in 4d 6h"),
+    ], "active"),
+    _account("acc-claude", "claude", "Example Claude", "Max (5x)", "Anthropic account usage", 60.0, False, [
+        _window("Current session", "4% used", 4.0, "Resets in 1h 34m", active=True),
+        _window("Weekly limit", "1% used", 1.0, "Resets in 6d 22h", breakdown=[
+            _window("Claude Code", "1% used", 1.0, None),
+            _window("Chat", "0% used", 0.0, None),
+        ]),
+        _window("Weekly, Example model", "2% used", 2.0, "Resets in 6d 22h"),
+    ], "active", tokens=184200, requests=96),
+    _account("acc-gemini", "gemini", "Example Gemini", "Standard", "Google Code Assist tier", 300.0, False, [
+        _window("Requests per day", "128 of 1,500 requests", 8.5, "Resets in 9h 4m"),
+        _window("Weekly limit", None, None, None, sub="Google publishes no weekly figure for this tier"),
+    ], "active", requests=128),
 ]
 
 
@@ -104,7 +141,36 @@ EVENTS = [
                             "content": "Example output line"}),
 ]
 
+CAPABILITIES = {
+    "installed_agents": {"claude_code": {"installed": False, "path": None}},
+    "installed_clis": [{"id": "claude_code", "name": "Claude Code", "available": False},
+                       {"id": "codex", "name": "Codex", "available": False}],
+    "connected_providers": [], "total_accounts": 0, "skills": [],
+    "models": {
+        "claude_code": [{"id": "example-model-large", "name": "Example Large"},
+                        {"id": "example-model-small", "name": "Example Small"}],
+        "codex": [{"id": "example-codex", "name": "Example Codex"}],
+        "antigravity": [{"id": "example-flash", "name": "Example Flash"}],
+        "all": [{"id": "auto", "name": "Auto"}],
+    },
+    "efforts": ["low", "medium", "high"],
+    "efforts_by_provider": {
+        "claude_code": [{"id": "default", "name": "Default"}, {"id": "low", "name": "Low Effort"},
+                        {"id": "high", "name": "High Effort"}],
+        "codex": [{"id": "default", "name": "Default"}, {"id": "low", "name": "Low Reasoning"},
+                  {"id": "high", "name": "High Reasoning"}],
+        "antigravity": [{"id": "default", "name": "Default"}, {"id": "low", "name": "Low Reasoning"}],
+        "all": [{"id": "default", "name": "Auto"}],
+    },
+    "current_cwd": "/example/project", "default_cwd": "/example/project",
+    "recent_paths": ["/example/project"], "autostart_enabled": False,
+}
+
+FILES = {"files": ["README.md", "docs/example-notes.md", "src/example.py"], "cwd": "/example/project"}
+
 ROUTES = {
+    "/api/system/capabilities": CAPABILITIES,
+    "/api/system/files": FILES,
     "/api/mobile/status": STATUS,
     "/api/usage/accounts": USAGE,
     "/api/jobs": JOBS,
@@ -182,15 +248,33 @@ class Handler(BaseHTTPRequestHandler):
         if not self._gate():
             return
         path = self.path.split("?", 1)[0]
-        if path != "/api/console/dispatch":
-            self._send(404, {"detail": "not found"})
-            return
         try:
             payload = json.loads(raw.decode("utf-8") or "{}")
         except ValueError:
             payload = None
         if not isinstance(payload, dict):
             self._send(422, {"detail": "invalid body"})
+            return
+        if path == "/api/jobs":
+            self._create_job(payload)
+            return
+        if path == "/api/usage/refresh-all":
+            self._send(200, USAGE)
+            return
+        if path.startswith("/api/tasks/") and path.endswith("/request-revision"):
+            if not payload.get("feedback"):
+                self._send(422, {"detail": "A revision needs feedback."})
+                return
+            self._send(200, {"id": "rev-1", "task_id": path.split("/")[3], "status": "open"})
+            return
+        if path.startswith("/api/tasks/") and path.endswith("/fail"):
+            if not str(payload.get("reason") or "").strip():
+                self._send(422, {"detail": "A failure reason is required."})
+                return
+            self._send(200, {"id": path.split("/")[3], "status": "failed"})
+            return
+        if path != "/api/console/dispatch":
+            self._send(404, {"detail": "not found"})
             return
         # The real hub reads "agent" and answers 422 when it is missing.
         agent = payload.get("agent")
@@ -204,6 +288,52 @@ class Handler(BaseHTTPRequestHandler):
             "session_id": "sess-00000000",
             "message": "Placeholder dispatch accepted.",
         })
+
+    def do_DELETE(self):
+        if not self._gate():
+            return
+        path = self.path.split("?", 1)[0]
+        if path.startswith("/api/jobs/"):
+            job_id = path[len("/api/jobs/"):]
+            before = len(JOBS)
+            JOBS[:] = [job for job in JOBS if job["id"] != job_id]
+            if len(JOBS) == before:
+                self._send(404, {"detail": "Job '%s' not found." % job_id})
+            else:
+                self._send(200, {"message": "Job '%s' deleted successfully." % job_id})
+            return
+        self._send(404, {"detail": "not found"})
+
+    def _create_job(self, payload):
+        """Same checks as the real hub: a title, one task, unique ids and no cycles."""
+        title = str(payload.get("title") or "").strip()
+        tasks = payload.get("tasks")
+        if not title:
+            self._send(400, {"detail": "Job title cannot be empty."})
+            return
+        if not isinstance(tasks, list) or not tasks:
+            self._send(400, {"detail": "A job must contain at least one task."})
+            return
+        ids = [t.get("id") for t in tasks if isinstance(t, dict)]
+        if len(set(ids)) != len(tasks):
+            self._send(400, {"detail": "Duplicate task IDs detected in job specification."})
+            return
+        job_id = payload.get("id") or "job-%d" % (len(JOBS) + 1)
+        built = {}
+        for spec in tasks:
+            deps = spec.get("dependencies") or []
+            if any(dep not in ids for dep in deps):
+                self._send(400, {"detail": "Task '%s' references a non-existent dependency." % spec.get("id")})
+                return
+            task = _task(spec["id"], spec.get("title") or "", spec.get("assigned_agent") or "example-agent",
+                         "ready" if not deps else "pending", deps)
+            task["job_id"] = job_id
+            task["description"] = spec.get("description") or ""
+            built[spec["id"]] = task
+        job = {"id": job_id, "title": title, "description": payload.get("description") or "",
+               "status": "pending", "created_at": NOW, "updated_at": NOW, "tasks": built}
+        JOBS.append(job)
+        self._send(200, job)
 
     def log_message(self, format, *args):  # noqa: A002
         pass

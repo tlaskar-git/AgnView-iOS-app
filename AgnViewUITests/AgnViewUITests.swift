@@ -238,6 +238,153 @@ final class AgnViewUITests: XCTestCase {
         }
     }
 
+    /// The keyboard toolbar carries Model and Effort on the left and Done on the
+    /// right, and nothing in it sits over Send.
+    func testKeyboardToolbarHasChipsAndDoesNotCoverSend() throws {
+        launch(mock: true)
+        open("Console")
+        let prompt = element("composer-prompt")
+        XCTAssertTrue(prompt.waitForExistence(timeout: 30))
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"),
+                                                object: prompt)
+        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed)
+        need("composer-model")
+        need("composer-effort")
+        need("composer-attach")
+        prompt.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "the keyboard never appeared")
+        if !isPad {
+            need("toolbar-model", timeout: 10)
+            need("toolbar-effort", timeout: 10)
+            need("keyboard-done", timeout: 10)
+            let done = element("keyboard-done").frame
+            let send = element("composer-send").frame
+            XCTAssertFalse(done.intersects(send), "Done sits over Send")
+        }
+        snap("console-keyboard")
+        let done = element("keyboard-done")
+        if done.waitForExistence(timeout: 5) { done.tap() }
+    }
+
+    /// Model and Effort come from the hub and show on their chips.
+    func testModelAndEffortMenusUseTheHubLists() throws {
+        launch(mock: true)
+        open("Console")
+        let prompt = element("composer-prompt")
+        XCTAssertTrue(prompt.waitForExistence(timeout: 30))
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"),
+                                                object: prompt)
+        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed)
+        // The lists arrive a moment after the connection. Open the menu again until they are in.
+        var picked = false
+        for _ in 0..<6 where !picked {
+            element("composer-model").tap()
+            let large = app.buttons["Example Large"]
+            if large.waitForExistence(timeout: 5) {
+                large.tap()
+                picked = true
+            } else {
+                // Close the menu with a tap on the empty log area, then wait and retry.
+                element("console-log").tap()
+                Thread.sleep(forTimeInterval: 2)
+            }
+        }
+        XCTAssertTrue(picked, "the hub model list never reached the menu")
+        element("composer-effort").tap()
+        let low = app.buttons["Low Effort"]
+        XCTAssertTrue(low.waitForExistence(timeout: 10), "the hub effort list never reached the menu")
+        low.tap()
+        XCTAssertTrue(element("composer-model").label.contains("Model"))
+        XCTAssertEqual(element("composer-effort").value as? String, "Low")
+    }
+
+    /// Pipelines: plus opens the sheet, validation blocks an empty form, the
+    /// attach picker draws the disabled phone sources, and a created pipeline opens.
+    func testNewPipelineFlowAgainstMockHub() throws {
+        launch(mock: true)
+        open("Pipelines")
+        need("job-row", timeout: 30)
+        let plus = element("pipelines-new")
+        need("pipelines-new")
+        XCTAssertTrue(plus.isEnabled, "New pipeline stays disabled on the LAN")
+        plus.tap()
+        need("new-pipeline")
+        need("np-title")
+        // An empty form does not send. It shows what is missing.
+        element("np-create").tap()
+        need("np-issues")
+        XCTAssertTrue(element("np-issues").label.contains("Title is required"))
+
+        let title = element("np-title")
+        title.tap()
+        title.typeText("Example release")
+        let taskTitle = element("np-task-title")
+        taskTitle.tap()
+        taskTitle.typeText("Build it")
+        let done = element("np-keyboard-done")
+        if done.waitForExistence(timeout: 3) { done.tap() }
+
+        element("np-attach").tap()
+        need("attach-sheet")
+        need("attach-source-files")
+        need("attach-source-photos")
+        XCTAssertFalse(element("attach-source-files").isEnabled, "the phone source must be disabled in phase A")
+        XCTAssertFalse(element("attach-source-photos").isEnabled, "the phone source must be disabled in phase A")
+        let needsUpdate = app.staticTexts["Needs AgnView 0.1.13 on your computer"]
+        XCTAssertTrue(needsUpdate.waitForExistence(timeout: 5), "the disabled source has no reason")
+        need("attach-file-row", timeout: 30)
+        snap("attach-sheet")
+        element("attach-file-row").tap()
+        element("attach-confirm").tap()
+        need("np-attachment")
+        snap("new-pipeline")
+
+        element("np-create").tap()
+        need("job-detail", timeout: 30)
+        XCTAssertEqual(element("job-detail-title").label, "Example release")
+        let row = element("task-row")
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        XCTAssertTrue(row.label.contains("[Context Files:"), "the attached file is not in the task description")
+    }
+
+    func testSessionsRefreshShowsUpdated() throws {
+        launch(mock: true)
+        open("Sessions")
+        need("sessions-refresh")
+        element("sessions-refresh").tap()
+        need("sessions-updated")
+        let updated = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH 'Updated'"),
+                                                object: element("sessions-updated"))
+        XCTAssertEqual(XCTWaiter().wait(for: [updated], timeout: 20), .completed,
+                       "Sessions never showed when it was updated")
+        snap("sessions-refresh")
+    }
+
+    /// Usage draws the hub's windows and says "Not measured yet" only where the hub returned null.
+    func testUsageShowsWindowsFromTheHub() throws {
+        launch(mock: true)
+        open("Usage")
+        need("provider-antigravity", timeout: 30)
+        need("usage-refresh")
+        need("usage-window")
+        need("usage-breakdown")
+        need("usage-source")
+        let five = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Five Hour Limit'")).firstMatch
+        XCTAssertTrue(five.waitForExistence(timeout: 10))
+        XCTAssertTrue(five.label.contains("91% used"))
+        element("usage-refresh").tap()
+        need("usage-age")
+    }
+
+    func testSettingsShowsTheVersionWithoutABuildNumber() throws {
+        launch(mock: true)
+        open("Settings")
+        need("app-version")
+        let label = element("app-version").label
+        XCTAssertTrue(label.hasPrefix("Version "), "version line reads: \(label)")
+        XCTAssertFalse(label.contains("("), "the build number must not show: \(label)")
+    }
+
     func testRelayOnlyState() throws {
         launch(state: "relayOnly")
         need("banner-relay-only")

@@ -76,6 +76,16 @@ final class AppModel: ObservableObject {
     @Published private(set) var sessionsState: PanelState<[SessionInfo]> = .loading
     /// The last console send. Nil before the first send.
     @Published private(set) var dispatchState: PanelState<DispatchResponse>?
+    /// The model and effort lists from the hub. Empty until the hub answers,
+    /// and always empty over iroh, where the hub offers no such call.
+    @Published private(set) var catalogue: HubCatalogue = .empty
+    /// What this build can use of the hub. Phase A: no phone uploads, no
+    /// per-task model and effort.
+    @Published var features: HubFeatures = .phaseA
+    /// When the Sessions list was last read.
+    @Published private(set) var sessionsUpdatedAt: Date?
+    /// True while a usage refresh runs.
+    @Published private(set) var usageRefreshing = false
     @Published var pairingResult: PairingResult = .idle
     /// A one-off message for the screens, such as the removal note.
     @Published var notice: String?
@@ -97,6 +107,19 @@ final class AppModel: ObservableObject {
     /// True when the sessions list comes from log frames, not from the hub.
     var sessionsAreDerived: Bool { !capabilities.contains(.sessions) }
     var usage: [UsageAccount] { usageSnapshot?.accounts ?? [] }
+    /// Attaching files that live on the computer, and the model and effort menus.
+    var canAttachFromComputer: Bool { connection.isOnline && capabilities.contains(.catalogue) }
+    /// Creating and deleting pipelines.
+    var canManageJobs: Bool { connection.isOnline && capabilities.contains(.manageJobs) }
+    /// Reading a pipeline, sending a revision request or marking a task failed.
+    var canActOnTasks: Bool { connection.isOnline && capabilities.contains(.jobs) }
+    /// True when Refresh in Usage asks the hub to read the providers again.
+    var canRefreshUsageOnHub: Bool { connection.isOnline && capabilities.contains(.usageRefresh) }
+    /// Why creating a pipeline is not possible here, or nil when it is.
+    var pipelineCreateNotice: String? {
+        guard connection.isOnline, !capabilities.contains(.manageJobs) else { return nil }
+        return capabilities.contains(.jobs) ? UserMessages.needsSameWiFi : UserMessages.hubNeedsUpdate
+    }
 
     /// True when the session can call the hub API: on the LAN always, over
     /// iroh when the hub lists the "api" capability (0.1.12 or later).
@@ -298,16 +321,19 @@ final class AppModel: ObservableObject {
     }
 
     /// Sends a prompt. Throws DispatchUnavailable when the connection has no
-    /// dispatch capability (iroh to a hub before 0.1.12).
+    /// dispatch capability (iroh to a hub before 0.1.12). Model and effort are
+    /// sent only when set. Files are paths on the hub computer.
     @discardableResult
     func dispatch(agent: String, prompt: String, workingDir: String? = nil,
-                  sessionId: String? = nil) async throws -> DispatchResponse {
+                  sessionId: String? = nil, model: String? = nil, effort: String? = nil,
+                  files: [String]? = nil) async throws -> DispatchResponse {
         guard canDispatch else {
             throw DispatchUnavailable(message: UserMessages.hubNeedsUpdate)
         }
         guard let client else { throw HubError.notConnected }
         let request = DispatchRequest(targetAgent: agent, prompt: prompt,
-                                      workingDir: workingDir, sessionId: sessionId)
+                                      workingDir: workingDir, sessionId: sessionId,
+                                      model: model, effort: effort, files: files)
         let response: DispatchResponse
         do {
             response = try await client.dispatch(request)
@@ -321,11 +347,13 @@ final class AppModel: ObservableObject {
     /// Sends a prompt and records the result in dispatchState. Returns true on
     /// success. A failure shows inline in the composer and nowhere else.
     @discardableResult
-    func send(agent: String, prompt: String) async -> Bool {
+    func send(agent: String, prompt: String, model: String? = nil, effort: String? = nil,
+              files: [String]? = nil) async -> Bool {
         if case .loading = dispatchState { return false }
         dispatchState = .loading
         do {
-            let response = try await dispatch(agent: agent, prompt: prompt)
+            let response = try await dispatch(agent: agent, prompt: prompt, model: model,
+                                              effort: effort, files: files)
             dispatchState = .loaded(response)
             return true
         } catch {
@@ -383,6 +411,25 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// The Refresh button in Usage. When the hub allows it (LAN), the hub reads
+    /// every provider again first. Otherwise, or when that fails, this only
+    /// reads the accounts the hub already holds.
+    func refreshUsageFromHub() async {
+        guard !usageRefreshing else { return }
+        usageRefreshing = true
+        defer { usageRefreshing = false }
+        if canRefreshUsageOnHub, let client {
+            let gen = generation
+            if let accounts = try? await client.refreshAllUsage(), gen == generation {
+                let snapshot = UsageSnapshot(accounts: accounts, takenAt: now())
+                usageSnapshot = snapshot
+                usageState = .loaded(snapshot)
+                return
+            }
+        }
+        await refreshUsage()
+    }
+
     func refreshJobs() async {
         guard jobsAreLive, let client else { return }
         let gen = generation
@@ -410,10 +457,94 @@ final class AppModel: ObservableObject {
             }
             sessions = mapped
             sessionsState = .loaded(mapped)
+            sessionsUpdatedAt = now()
         } catch {
             guard gen == generation, let message = panelFailure(error, panel: "Sessions") else { return }
             sessionsState = .failed(message)
         }
+    }
+
+    /// The Refresh button and pull to refresh in Sessions: read the newest log
+    /// rows (which the log-derived sessions come from), then the live sessions.
+    func refreshSessionsNow() async {
+        await backfillLogs()
+        await refreshSessions()
+        if !capabilities.contains(.sessions), connection.isOnline { sessionsUpdatedAt = now() }
+    }
+
+    /// Reads the log rows the app has not seen yet and ingests them.
+    private func backfillLogs() async {
+        guard connection.isOnline, hubServesAPI, let client else { return }
+        let gen = generation
+        guard let rows = try? await client.logs(afterId: lastLogId), gen == generation else { return }
+        for row in rows { ingest(row) }
+    }
+
+    // MARK: Composer catalogue, files and pipelines
+
+    func refreshCatalogue() async {
+        guard canAttachFromComputer, let client else {
+            if !capabilities.contains(.catalogue) { catalogue = .empty }
+            return
+        }
+        let gen = generation
+        if let fresh = try? await client.capabilities(), gen == generation { catalogue = fresh }
+    }
+
+    /// The files on the computer that can be attached.
+    func hubFiles() async throws -> [String] {
+        guard canAttachFromComputer else { throw HubError.transport(.notSupported) }
+        guard let client else { throw HubError.notConnected }
+        do {
+            return try await client.files().files
+        } catch {
+            throw HubError.transport(TransportError.normalise(error))
+        }
+    }
+
+    /// Creates a pipeline, reads the list again and returns the new pipeline.
+    /// A refusal by the hub comes back as HubRejection with its reason.
+    func createPipeline(_ draft: PipelineDraft) async throws -> Job {
+        guard canManageJobs else { throw HubError.transport(.notSupported) }
+        guard let client else { throw HubError.notConnected }
+        let job: Job
+        do {
+            job = try await client.createJob(draft.requestBody())
+        } catch let rejection as HubRejection {
+            throw rejection
+        } catch {
+            throw HubError.transport(TransportError.normalise(error))
+        }
+        await refreshJobs()
+        return job
+    }
+
+    func deletePipeline(id: String) async throws {
+        guard canManageJobs else { throw HubError.transport(.notSupported) }
+        try await taskCall { client in try await client.deleteJob(id: id) }
+    }
+
+    func requestRevision(taskId: String, feedback: String) async throws {
+        guard canActOnTasks else { throw HubError.transport(.notSupported) }
+        try await taskCall { client in try await client.requestRevision(taskId: taskId, feedback: feedback) }
+    }
+
+    func failTask(taskId: String, reason: String) async throws {
+        guard canActOnTasks else { throw HubError.transport(.notSupported) }
+        try await taskCall { client in try await client.failTask(taskId: taskId, reason: reason) }
+    }
+
+    /// Runs a pipeline change, then reads the list again.
+    private func taskCall(_ call: (HubClient) async throws -> Void) async throws {
+        guard let client else { throw HubError.notConnected }
+        do {
+            try await call(client)
+        } catch let rejection as HubRejection {
+            throw rejection
+        } catch {
+            throw HubError.transport(TransportError.normalise(error))
+        }
+        await refreshJobs()
     }
 
     // MARK: Connection loop
@@ -437,6 +568,8 @@ final class AppModel: ObservableObject {
         jobsState = .loading
         sessionsState = .loading
         dispatchState = nil
+        catalogue = .empty
+        sessionsUpdatedAt = nil
         statusLine = "No hub connected"
     }
 
@@ -534,7 +667,7 @@ final class AppModel: ObservableObject {
         let route = session.route
         connection = .online(route, session.capabilities)
         if session.capabilities.contains(.usage) {
-            statusLine = "Connected"
+            statusLine = "Connected to \(activeHub?.name ?? "the hub")"
             let gen = generation
             Task { [weak self] in await self?.refreshAll(generation: gen) }
         } else {
@@ -543,12 +676,13 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// The real hub sends a transport label and no service or version.
-    static func statusText(_ status: MobileStatus) -> String {
-        let label = [status.transportLabel, status.resolvedTransport]
-            .compactMap { $0 }.first { !$0.isEmpty }
-        if let label { return "Connected via \(label): \(status.status)" }
-        return "Connected: \(status.status)"
+    /// "<hub name> is healthy". The route pill shows the transport, so the
+    /// hub's own transport label (which reads "Loopback only" on a LAN hub)
+    /// is left out of this line.
+    static func statusText(_ status: MobileStatus, hubName: String) -> String {
+        let name = hubName.trimmingCharacters(in: .whitespaces).isEmpty ? "The hub" : hubName
+        let state = status.status.trimmingCharacters(in: .whitespaces)
+        return name + " is " + (state.isEmpty ? "reachable" : state)
     }
 
     private func refreshAll(generation gen: Int) async {
@@ -558,8 +692,9 @@ final class AppModel: ObservableObject {
         await refreshSessions()
         await refreshUsage()
         await refreshJobs()
+        await refreshCatalogue()
         if let status = try? await client.status(), gen == generation {
-            statusLine = Self.statusText(status)
+            statusLine = Self.statusText(status, hubName: activeHub?.name ?? "")
         }
     }
 

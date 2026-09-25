@@ -3,10 +3,28 @@ import SwiftUI
 struct SessionsView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var nav: NavState
+    @State private var refreshing = false
 
     var body: some View {
-        ScreenChrome(screen: .sessions) {
+        ScreenChrome(screen: .sessions, onRefresh: { await model.refreshSessionsNow() }) {
             VStack(alignment: .leading, spacing: Theme.spacing) {
+                HStack(alignment: .center) {
+                    TimelineView(.periodic(from: .now, by: 15)) { context in
+                        Text(Format.updated(from: model.sessionsUpdatedAt, to: context.date))
+                            .font(.footnote)
+                            .foregroundStyle(Theme.textSecondary)
+                            .accessibilityIdentifier("sessions-updated")
+                    }
+                    Spacer()
+                    PillButton(title: "Refresh", symbol: "arrow.clockwise",
+                               identifier: "sessions-refresh", busy: refreshing) {
+                        Task {
+                            refreshing = true
+                            await model.refreshSessionsNow()
+                            refreshing = false
+                        }
+                    }
+                }
                 if let notice = model.sessionsNotice {
                     Banner(kind: .info, text: notice, identifier: "sessions-notice")
                 }

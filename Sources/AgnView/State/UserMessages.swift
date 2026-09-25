@@ -9,6 +9,7 @@ enum UserMessages {
     static let removedFromPhone = "Removed from this phone. The key stays valid on the hub until you regenerate it there."
     static let sessionsFromLog = "Showing sessions seen in the log stream"
     static let hubNeedsUpdate = "Your hub does not support remote access yet. Update AgnView on your computer to 0.1.12 or later."
+    static let needsSameWiFi = "This needs the same Wi-Fi as your computer. Pipelines can be read here, but not created."
     static let offlineHub = "Can't reach this hub. Check that AgnView is running on your computer."
 
     static func lanBanner(_ reason: LANUnavailableReason) -> String {

@@ -209,6 +209,48 @@ struct AdaptiveStack<Content: View>: View {
     }
 }
 
+/// Adds pull to refresh when there is an action for it.
+struct OptionalRefresh: ViewModifier {
+    let action: (() async -> Void)?
+
+    func body(content: Content) -> some View {
+        if let action {
+            content.refreshable { await action() }
+        } else {
+            content
+        }
+    }
+}
+
+/// A small pill button with an icon, for actions such as Refresh.
+struct PillButton: View {
+    let title: String
+    let symbol: String
+    let identifier: String
+    var busy = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if busy {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: symbol)
+                }
+                Text(title).font(.subheadline.weight(.semibold))
+            }
+            .foregroundStyle(Theme.action)
+            .padding(.horizontal, 12)
+            .frame(minHeight: Theme.minTap)
+            .background(Capsule().fill(Theme.raised))
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+        .accessibilityIdentifier(identifier)
+    }
+}
+
 enum ScreenGate {
     case none, noHub, offline, authFailed, keyRevoked
 }
@@ -218,14 +260,18 @@ enum ScreenGate {
 struct ScreenChrome<Content: View>: View {
     let screen: Screen
     let scrolls: Bool
+    /// When set, the screen scrolls and supports pull to refresh.
+    let onRefresh: (() async -> Void)?
     private let content: Content
 
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var nav: NavState
 
-    init(screen: Screen, scrolls: Bool = true, @ViewBuilder content: () -> Content) {
+    init(screen: Screen, scrolls: Bool = true, onRefresh: (() async -> Void)? = nil,
+         @ViewBuilder content: () -> Content) {
         self.screen = screen
         self.scrolls = scrolls
+        self.onRefresh = onRefresh
         self.content = content()
     }
 
@@ -275,6 +321,7 @@ struct ScreenChrome<Content: View>: View {
                         content.frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .scrollDismissesKeyboard(.interactively)
+                    .modifier(OptionalRefresh(action: onRefresh))
                 } else {
                     content.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }

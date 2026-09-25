@@ -105,6 +105,10 @@ jobs:
           test "$status" = "0"
           grep -q "testRealHubAPIAndDispatchOverIroh\]' passed" "$RUNNER_TEMP/e2e-test.log"
           grep -q "testRealHubRejectsAWrongKey\]' passed" "$RUNNER_TEMP/e2e-test.log"
+          grep -q "testModelEffortSessionsAndLANOnlyRoutesOverIroh\]' passed" "$RUNNER_TEMP/e2e-test.log"
+          grep -q "^E2E-PASS model and effort reached the agent over iroh" "$out"
+          grep -q "^E2E-PASS sessions refresh" "$out"
+          grep -q "^E2E-PASS LAN only calls refused over iroh" "$out"
           grep -q "^E2E-ROUTE " "$out"
           grep -q "^E2E-PASS dispatch output" "$out"
 
