@@ -159,7 +159,10 @@ final class LANSession: HubSession {
     var frames: AsyncThrowingStream<ConsoleFrame, Error> {
         lock.withLock {
             if pumpTask == nil {
-                let task = Task { [weak self] in await self?.pump() }
+                let task = Task<Void, Never> { [weak self] in
+                    guard let self else { return }
+                    await self.pump()
+                }
                 pumpTask = task
                 continuation.onTermination = { _ in task.cancel() }
             }
