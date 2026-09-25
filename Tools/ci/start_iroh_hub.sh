@@ -23,6 +23,10 @@ chmod +x "$stubs/claude"
 cp "$(dirname "$0")/stub_codex.sh" "$stubs/codex"
 chmod +x "$stubs/codex"
 
+# Agent adapters that place the model and effort in the codex command.
+mkdir -p "$home/.agnview"
+cp "$(dirname "$0")/e2e_agents.yaml" "$home/.agnview/agents.yaml"
+
 port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
 
 env -u AGNVIEW_IROH -u AGNVIEW_IROH_API \

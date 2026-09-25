@@ -127,7 +127,7 @@ final class IrohRealHubTests: XCTestCase {
             entry = try await waitForLog(session, seconds: 60) { entry in
                 let content = entry.content ?? ""
                 return content.contains("stub args") && content.contains("reasoning_effort=low")
-                    && content.contains("-m gpt-5")
+                    && content.contains("-m gpt-5") && content.contains("[Context Files: README.md]")
             }
         } catch {
             // Say what the hub did log, so a failure can be read from the run.
