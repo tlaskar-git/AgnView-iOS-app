@@ -50,7 +50,45 @@ jobs:
         run: |
           set +x
           nohup python3 Tools/mock-hub/mock_hub.py 18081 > "$RUNNER_TEMP/mock-hub.log" 2>&1 &
-          python3 Tools/ci/wait_hub.py 18081
+
+      - name: Check mock hub auth header
+        run: |
+          set +x
+          python3 - <<'PY'
+          import sys, time, urllib.error, urllib.request
+
+          URL = "http://127.0.0.1:18081/api/mobile/status"
+          VALUE = "test-key-not-real"
+
+          def code(headers):
+              req = urllib.request.Request(URL, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=3) as resp:
+                      return resp.status
+              except urllib.error.HTTPError as err:
+                  return err.code
+              except OSError:
+                  return 0
+
+          for _ in range(30):
+              if code({"X-AgnView-Token": VALUE}) == 200:
+                  break
+              time.sleep(1)
+          results = {
+              "X-AgnView-Token": code({"X-AgnView-Token": VALUE}),
+              "Bearer": code({"Authorization": "Bearer " + VALUE}),
+              "none": code({}),
+              "wrong": code({"X-AgnView-Token": "wrong-test-value"}),
+          }
+          print(results)
+          expected = {"X-AgnView-Token": 200, "Bearer": 200, "none": 401, "wrong": 401}
+          sys.exit(0 if results == expected else 1)
+          PY
+
+      - name: Resolve packages
+        run: |
+          set +x
+          xcodebuild -resolvePackageDependencies -scheme AgnView
 
       - name: Build and test
         env:
