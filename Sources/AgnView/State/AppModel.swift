@@ -318,6 +318,11 @@ final class AppModel: ObservableObject {
         startConnection()
     }
 
+    /// Renames a machine on this phone only.
+    func rename(_ id: String, to name: String) {
+        if store.rename(id: id, to: name) { syncFromStore() }
+    }
+
     /// Removes the hub and its key from this phone. The key stays valid on the hub.
     func remove(_ id: String) {
         let wasActive = activeHub?.id == id

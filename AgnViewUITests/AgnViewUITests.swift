@@ -146,7 +146,8 @@ final class AgnViewUITests: XCTestCase {
             XCTAssertNotNil(row, "sidebar item \(name) missing")
             row?.tap()
         } else {
-            let tab = app.tabBars.buttons[name]
+            // The floating tab bar draws its own buttons: tab-sessions, tab-console and so on.
+            let tab = app.buttons["tab-" + name.lowercased()]
             XCTAssertTrue(tab.waitForExistence(timeout: 20), "tab \(name) missing")
             tab.tap()
         }

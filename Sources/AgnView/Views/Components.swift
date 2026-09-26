@@ -5,6 +5,42 @@ import SwiftUI
 final class NavState: ObservableObject {
     @Published var screen: Screen = .console
     @Published var showPairing = false
+    /// True while the software keyboard is up. The tab bar hides and the
+    /// screens stop reserving room for it.
+    @Published var keyboardVisible = false
+    /// A short confirmation that fades by itself, such as "Switched to Studio".
+    @Published private(set) var toast: String?
+    private var toastTask: Task<Void, Never>?
+
+    func showToast(_ text: String) {
+        toast = text
+        toastTask?.cancel()
+        toastTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_400_000_000)
+            if !Task.isCancelled { self?.toast = nil }
+        }
+        UIAccessibility.post(notification: .announcement, argument: text)
+    }
+}
+
+/// The toast: a dark capsule under the header.
+struct ToastView: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Color.white)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Capsule().fill(Color(light: 0x1C1C20, dark: 0x3A3A3F)))
+            .shadow(color: Color.black.opacity(0.25), radius: 10, x: 0, y: 4)
+            .padding(.horizontal, 24)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(text)
+            .accessibilityIdentifier("toast")
+    }
 }
 
 struct CardStyle: ViewModifier {
@@ -295,7 +331,16 @@ struct ScreenChrome<Content: View, Actions: View>: View {
         .background(canvas.ignoresSafeArea())
         .navigationTitle(screen.title)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .navigationBar)
+        // The phone hides the bar. On iPad the bar stays for the sidebar button
+        // and shows no title of its own.
+        .toolbar(HeaderMetrics.isPad ? .visible : .hidden, for: .navigationBar)
+        .toolbar {
+            if HeaderMetrics.isPad {
+                ToolbarItem(placement: .principal) {
+                    Text("").accessibilityHidden(true)
+                }
+            }
+        }
         .scrollsToTopOnTabTap(screen)
         // A container with its own identifier. A bare identifier on a plain
         // stack would replace the identifiers of everything inside it.
