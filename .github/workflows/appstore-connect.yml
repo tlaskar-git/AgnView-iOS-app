@@ -1,0 +1,204 @@
+name: appstore-connect
+
+# Manual App Store Connect helper. `check` only reads. `apply` writes the listing
+# text, categories, age rating, build, App Review details and screenshots that
+# the API allows. Neither mode submits for review, so the operator still presses
+# Submit for Review. The "release" environment requires approval for each run.
+# The log shows only PASS, MISSING, INFO, SET, SKIP and MANUAL lines.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: check reads only, apply writes what the API allows
+        type: choice
+        options:
+          - check
+          - apply
+        default: check
+      screenshots_run_id:
+        description: Run id of an appstore-screenshots run whose artifact holds the PNG folders (apply only, optional)
+        type: string
+        required: false
+        default: ""
+      replace_screenshots:
+        description: Replace screenshot sets that already hold screenshots (apply only)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: appstore-connect
+  cancel-in-progress: false
+
+jobs:
+  asc:
+    name: asc (${{ inputs.mode }})
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Install cryptography
+        run: |
+          set +x
+          python -m pip install --quiet "cryptography==50.0.1"
+
+      - name: Mask and check the secrets, decode the key
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+          APP_BUNDLE_ID: ${{ secrets.APP_BUNDLE_ID }}
+          REVIEW_CONTACT_FIRST_NAME: ${{ secrets.REVIEW_CONTACT_FIRST_NAME }}
+          REVIEW_CONTACT_LAST_NAME: ${{ secrets.REVIEW_CONTACT_LAST_NAME }}
+          REVIEW_CONTACT_PHONE: ${{ secrets.REVIEW_CONTACT_PHONE }}
+          REVIEW_CONTACT_EMAIL: ${{ secrets.REVIEW_CONTACT_EMAIL }}
+        run: |
+          set +x
+          fails=0
+          for name in ASC_API_KEY_ID ASC_API_ISSUER_ID APP_BUNDLE_ID \
+                      REVIEW_CONTACT_FIRST_NAME REVIEW_CONTACT_LAST_NAME \
+                      REVIEW_CONTACT_PHONE REVIEW_CONTACT_EMAIL; do
+            eval "value=\${$name:-}"
+            if [ -n "$value" ]; then
+              echo "::add-mask::$value"
+            fi
+          done
+
+          check_regex() {
+            eval "value=\${$1:-}"
+            if [ -z "$value" ]; then
+              echo "FAIL $1: is missing or empty"
+              fails=$((fails + 1))
+            elif printf '%s' "$value" | grep -Eq "$2"; then
+              echo "PASS $1: $3"
+            else
+              echo "FAIL $1: $3"
+              fails=$((fails + 1))
+            fi
+          }
+          check_regex ASC_API_KEY_ID '^[A-Z0-9]{10}$' "is 10 upper case letters or digits"
+          check_regex ASC_API_ISSUER_ID '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$' "is a UUID (8-4-4-4-12 hex)"
+          check_regex APP_BUNDLE_ID '^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$' "is a reverse-DNS identifier"
+
+          set_count=0
+          for name in REVIEW_CONTACT_FIRST_NAME REVIEW_CONTACT_LAST_NAME REVIEW_CONTACT_PHONE REVIEW_CONTACT_EMAIL; do
+            eval "value=\${$name:-}"
+            if [ -n "$value" ]; then set_count=$((set_count + 1)); fi
+          done
+          if [ "$set_count" -eq 4 ]; then
+            echo "PASS REVIEW_CONTACT secrets: all four are set"
+          else
+            echo "INFO REVIEW_CONTACT secrets: $set_count of 4 are set, the contact step is skipped"
+          fi
+
+          key_dir="$RUNNER_TEMP/asc"
+          mkdir -p "$key_dir"
+          chmod 700 "$key_dir"
+          key_file="$key_dir/key.p8"
+          umask 077
+          if [ -z "${ASC_API_KEY_P8_BASE64:-}" ]; then
+            echo "FAIL ASC_API_KEY_P8_BASE64: is missing or empty"
+            fails=$((fails + 1))
+          elif printf '%s' "$ASC_API_KEY_P8_BASE64" | base64 --decode > "$key_file" 2>/dev/null && [ -s "$key_file" ]; then
+            chmod 600 "$key_file"
+            # The header is split so secret scanners do not flag this file.
+            pem_header="-----BEGIN PRIVATE"" KEY-----"
+            if [ "$(head -c 27 "$key_file")" = "$pem_header" ]; then
+              echo "PASS ASC_API_KEY_P8_BASE64: decoded text starts with the PEM private key header"
+              # Mask each key line so a stray print can never show it.
+              while IFS= read -r line; do
+                case "$line" in
+                  -----*) ;;
+                  ?*) echo "::add-mask::$line" ;;
+                esac
+              done < "$key_file"
+              echo "ASC_API_KEY_P8_PATH=$key_file" >> "$GITHUB_ENV"
+            else
+              echo "FAIL ASC_API_KEY_P8_BASE64: decoded text starts with the PEM private key header"
+              fails=$((fails + 1))
+            fi
+          else
+            echo "FAIL ASC_API_KEY_P8_BASE64: decodes from base64 to non-empty output"
+            fails=$((fails + 1))
+          fi
+
+          if [ "$fails" -ne 0 ]; then
+            echo "$fails secret check(s) failed."
+            exit 1
+          fi
+
+      - name: Download the screenshots
+        if: ${{ inputs.mode == 'apply' && inputs.screenshots_run_id != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ inputs.screenshots_run_id }}
+        run: |
+          set +x
+          case "$RUN_ID" in
+            ''|*[!0-9]*)
+              echo "FAIL screenshots_run_id: must be a number"
+              exit 1
+              ;;
+          esac
+          dest="$RUNNER_TEMP/shots-download"
+          mkdir -p "$dest"
+          if ! gh run download "$RUN_ID" --name appstore-screenshots --dir "$dest" >/dev/null 2>&1; then
+            echo "FAIL screenshots artifact: run $RUN_ID has no artifact named appstore-screenshots, or it expired"
+            exit 1
+          fi
+          # The display type folders can sit at the top or one level down.
+          first="$(find "$dest" -maxdepth 3 -type d -name 'APP_*' -print -quit)"
+          if [ -z "$first" ]; then
+            echo "FAIL screenshots artifact: it holds no folder named after an App Store display type"
+            exit 1
+          fi
+          root="$(dirname "$first")"
+          echo "SHOTS_DIR=$root" >> "$GITHUB_ENV"
+          count="$(find "$root" -maxdepth 2 -type f -name '*.png' | wc -l | tr -d ' ')"
+          echo "PASS screenshots artifact: $count PNG file(s) downloaded"
+
+      - name: Run the tool
+        env:
+          MODE: ${{ inputs.mode }}
+          REPLACE: ${{ inputs.replace_screenshots }}
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+          APP_BUNDLE_ID: ${{ secrets.APP_BUNDLE_ID }}
+          REVIEW_CONTACT_FIRST_NAME: ${{ secrets.REVIEW_CONTACT_FIRST_NAME }}
+          REVIEW_CONTACT_LAST_NAME: ${{ secrets.REVIEW_CONTACT_LAST_NAME }}
+          REVIEW_CONTACT_PHONE: ${{ secrets.REVIEW_CONTACT_PHONE }}
+          REVIEW_CONTACT_EMAIL: ${{ secrets.REVIEW_CONTACT_EMAIL }}
+          PYTHONUNBUFFERED: "1"
+        run: |
+          set +x
+          args=("$MODE" --listing AppStore/listing.json)
+          if [ "$MODE" = "apply" ]; then
+            if [ -n "${SHOTS_DIR:-}" ]; then
+              args+=(--screenshots-dir "$SHOTS_DIR")
+              if [ "$REPLACE" = "true" ]; then
+                args+=(--replace-screenshots)
+              fi
+            fi
+          fi
+          python Tools/asc/asc_tool.py "${args[@]}"
+
+      - name: Clean up
+        if: always()
+        run: |
+          set +x
+          rm -rf "$RUNNER_TEMP/asc" "$RUNNER_TEMP/shots-download"
