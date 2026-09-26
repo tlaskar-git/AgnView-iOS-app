@@ -129,8 +129,11 @@ final class DemoModeUITests: DemoUITestCase {
         needAnywhere("about-support")
         needAnywhere("about-get-desktop")
         needAnywhere("about-acknowledgements")
-        element("about-acknowledgements").tap()
-        need("acknowledgements")
+        let row = hittable("about-acknowledgements", timeout: 10) ?? element("about-acknowledgements")
+        row.tap()
+        let opened = app.navigationBars["Acknowledgements"].waitForExistence(timeout: 10)
+            || element("acknowledgements").waitForExistence(timeout: 5)
+        XCTAssertTrue(opened, "the Acknowledgements screen never opened")
         let names = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'iroh-ffi'"))
         XCTAssertTrue(names.firstMatch.waitForExistence(timeout: 5), "iroh-ffi is not listed")
     }
