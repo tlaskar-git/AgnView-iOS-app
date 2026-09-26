@@ -166,7 +166,8 @@ final class PhaseADecodeTests: XCTestCase {
 
     /// The answer of GET /api/system/capabilities built from the hub 0.1.14
     /// model and effort lists, with placeholder paths.
-    private static func catalogue014(_ name: String = "system_capabilities.json",
+    /// File names are unique across fixture folders: the test bundle copies them flat.
+    private static func catalogue014(_ name: String = "system_capabilities_0_1_14.json",
                                      file: StaticString = #filePath) throws -> HubCatalogue {
         let folder = URL(fileURLWithPath: "\(file)").deletingLastPathComponent()
             .appendingPathComponent("Fixtures/hub-0.1.14")
@@ -210,7 +211,7 @@ final class PhaseADecodeTests: XCTestCase {
     /// alone, and the catalogue says it has no named models, which the screen
     /// explains instead of looking empty.
     func testDefaultOnlyListIsAValidState() throws {
-        let catalogue = try Self.catalogue014("system_capabilities_default_only.json")
+        let catalogue = try Self.catalogue014("system_capabilities_default_only_0_1_14.json")
         XCTAssertEqual(catalogue.modelOptions(for: "claude_code"), [ChoiceOption.hubDefault])
         XCTAssertEqual(catalogue.modelOptions(for: "codex"), [ChoiceOption.hubDefault])
         XCTAssertFalse(catalogue.hasNamedModels(for: "claude_code"))
