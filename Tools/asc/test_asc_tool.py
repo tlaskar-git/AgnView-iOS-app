@@ -571,6 +571,273 @@ class CheckTests(unittest.TestCase):
             self.assertRegex(line, r"^(PASS|MISSING|INFO|MANUAL|RESULT|ERROR|SET|SKIP|FAIL)\b", line)
 
 
+class ApplyTests(unittest.TestCase):
+    def setUp(self):
+        self.tool = ToolRun(CONTACT)
+        self.addCleanup(self.tool.close)
+
+    def apply(self, fake, extra=None, listing=LISTING_PATH):
+        return self.tool.run(fake, ["apply", "--listing", listing] + (extra or []))
+
+    @staticmethod
+    def writes(fake):
+        return [e for e in fake.log if e["method"] != "GET"]
+
+    def listing_copy(self, **changes):
+        with open(LISTING_PATH, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        doc.update(changes)
+        path = os.path.join(self.tool.tmp.name, "listing-%d.json" % len(os.listdir(self.tool.tmp.name)))
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh)
+        return path
+
+    def test_fresh_app_gets_every_write_in_order(self):
+        fake = self.tool.fake(complete=False)
+        vid = fake.all("appStoreVersions")[0]["id"]
+        iid = fake.all("appInfos")[0]["id"]
+        decl = fake.all("ageRatingDeclarations")[0]["id"]
+        build = fake.all("builds")[0]["id"]
+        code, lines = self.apply(fake)
+        self.assertEqual(code, 0, "\n".join(lines))
+        seq = [(e["method"], e["path"]) for e in self.writes(fake)]
+        self.assertEqual(seq, [
+            ("POST", "/v1/appStoreVersionLocalizations"),
+            ("POST", "/v1/appInfoLocalizations"),
+            ("PATCH", "/v1/appInfos/%s" % iid),
+            ("PATCH", "/v1/appStoreVersions/%s" % vid),
+            ("PATCH", "/v1/ageRatingDeclarations/%s" % decl),
+            ("PATCH", "/v1/apps/900001"),
+            ("PATCH", "/v1/appStoreVersions/%s/relationships/build" % vid),
+            ("POST", "/v1/appStoreReviewDetails"),
+            ("POST", "/v1/appPriceSchedules"),
+        ])
+        bodies = [e["body"] for e in self.writes(fake)]
+        loc = bodies[0]["data"]
+        self.assertEqual(loc["type"], "appStoreVersionLocalizations")
+        self.assertEqual(loc["relationships"]["appStoreVersion"]["data"], {"type": "appStoreVersions", "id": vid})
+        self.assertEqual(loc["attributes"]["locale"], "en-US")
+        self.assertEqual(sorted(loc["attributes"]),
+                         ["description", "keywords", "locale", "marketingUrl", "promotionalText", "supportUrl"])
+        info_loc = bodies[1]["data"]
+        self.assertEqual(info_loc["relationships"]["appInfo"]["data"], {"type": "appInfos", "id": iid})
+        self.assertEqual(sorted(info_loc["attributes"]), ["locale", "name", "privacyPolicyUrl", "subtitle"])
+        self.assertEqual(bodies[2]["data"]["relationships"], {
+            "primaryCategory": {"data": {"type": "appCategories", "id": "DEVELOPER_TOOLS"}},
+            "secondaryCategory": {"data": {"type": "appCategories", "id": "PRODUCTIVITY"}}})
+        self.assertEqual(bodies[3]["data"], {"type": "appStoreVersions", "id": vid,
+                                             "attributes": {"copyright": "2026 Example Test"}})
+        self.assertEqual(bodies[4]["data"]["type"], "ageRatingDeclarations")
+        self.assertEqual(bodies[4]["data"]["attributes"]["violenceRealistic"], "NONE")
+        self.assertIs(bodies[4]["data"]["attributes"]["advertising"], False)
+        self.assertEqual(bodies[5]["data"]["attributes"],
+                         {"contentRightsDeclaration": "DOES_NOT_USE_THIRD_PARTY_CONTENT"})
+        self.assertEqual(bodies[6], {"data": {"type": "builds", "id": build}})
+        review = bodies[7]["data"]
+        self.assertEqual(review["relationships"]["appStoreVersion"]["data"], {"type": "appStoreVersions", "id": vid})
+        self.assertEqual(sorted(review["attributes"]), sorted([
+            "notes", "demoAccountRequired", "contactFirstName", "contactLastName", "contactPhone", "contactEmail"]))
+        self.assertIs(review["attributes"]["demoAccountRequired"], False)
+        price = bodies[8]
+        self.assertEqual(price["data"]["relationships"]["app"]["data"], {"type": "apps", "id": "900001"})
+        self.assertEqual(price["data"]["relationships"]["baseTerritory"]["data"], {"type": "territories", "id": "USA"})
+        ref = price["data"]["relationships"]["manualPrices"]["data"][0]
+        self.assertEqual(price["included"][0]["id"], ref["id"])
+        self.assertEqual(price["included"][0]["relationships"]["appPricePoint"]["data"],
+                         {"type": "appPricePoints", "id": "pp-free"})
+
+    def test_what_is_new_skipped_for_first_version_and_sent_for_updates(self):
+        fake = self.tool.fake(complete=False)
+        _c, lines = self.apply(fake)
+        self.assertTrue(any("what's new is not set because this is the first version" in l for l in lines))
+        self.assertNotIn("whatsNew", json.dumps([e["body"] for e in self.writes(fake)]))
+        fake = self.tool.fake(complete=False)
+        fake.add("appStoreVersions", {"versionString": "0.9", "platform": "IOS", "appVersionState": "READY_FOR_SALE"},
+                 parent="900001")
+        code, _lines = self.apply(fake)
+        self.assertEqual(code, 0)
+        first = self.writes(fake)[0]["body"]["data"]["attributes"]
+        self.assertEqual(first["whatsNew"], "Placeholder release notes for tests.")
+
+    def test_apply_is_idempotent_and_check_is_clean_after(self):
+        fake = self.tool.fake(complete=False)
+        self.assertEqual(self.apply(fake)[0], 0)
+        first_writes = len(self.writes(fake))
+        code, lines = self.apply(fake)
+        self.assertEqual(code, 0)
+        self.assertEqual(len(self.writes(fake)), first_writes, "second run wrote again")
+        self.assertEqual([l for l in lines if l.startswith("SET ")], [], "\n".join(lines))
+        self.assertTrue(any(l.startswith("SKIP version localisation en-US: already up to date") for l in lines))
+        _c, chk = self.tool.run(fake, ["check", "--listing", LISTING_PATH])
+        missing = [l.split(":")[0] for l in chk if l.startswith("MISSING")]
+        self.assertEqual(sorted(missing), [
+            "MISSING availability", "MISSING screenshots en-US iPad 13 inch", "MISSING screenshots en-US iPhone 6.9 inch"])
+
+    def test_update_only_sends_changed_fields(self):
+        fake = self.tool.fake()
+        loc = fake.all("appStoreVersionLocalizations")[0]
+        loc["attributes"].update({"description": "Old text", "keywords": "test,placeholder,example",
+                                  "promotionalText": "Placeholder promotional text for tests.",
+                                  "supportUrl": "https://example.test/support", "marketingUrl": "https://example.test/"})
+        code, lines = self.apply(fake)
+        self.assertEqual(code, 0, "\n".join(lines))
+        patches = [e for e in self.writes(fake) if e["path"].startswith("/v1/appStoreVersionLocalizations/")]
+        self.assertEqual(len(patches), 1)
+        self.assertEqual(patches[0]["body"]["data"]["attributes"], {
+            "description": "Placeholder description text for tests only.\n\nSecond paragraph of placeholder text."})
+        self.assertIn("SET version localisation en-US: updated: description", lines)
+
+    def test_no_contact_secrets_skips_contact_and_never_writes_them(self):
+        tool = ToolRun(None)
+        self.addCleanup(tool.close)
+        fake = tool.fake(complete=False)
+        code, lines = tool.run(fake, ["apply", "--listing", LISTING_PATH])
+        self.assertEqual(code, 0)
+        self.assertTrue(any(l.startswith("SKIP review contact: the REVIEW_CONTACT_* secrets are not all set") for l in lines))
+        review = [e for e in self.writes(fake) if "appStoreReviewDetails" in e["path"]]
+        self.assertEqual(sorted(review[0]["body"]["data"]["attributes"]), ["demoAccountRequired", "notes"])
+
+    def test_partial_contact_secrets_count_as_absent(self):
+        partial = dict(CONTACT)
+        del partial["REVIEW_CONTACT_PHONE"]
+        tool = ToolRun(partial)
+        self.addCleanup(tool.close)
+        fake = tool.fake(complete=False)
+        _c, lines = tool.run(fake, ["apply", "--listing", LISTING_PATH])
+        self.assertTrue(any(l.startswith("SKIP review contact") for l in lines))
+        self.assertNotIn("Fakefirst", json.dumps([e["body"] for e in self.writes(fake)]))
+
+    def test_contact_values_never_in_output(self):
+        fake = self.tool.fake(complete=False)
+        _c, lines = self.apply(fake)
+        blob = "\n".join(lines)
+        for value in CONTACT.values():
+            self.assertNotIn(value, blob)
+        self.assertIn("SET app review details: created: contactEmail, contactFirstName, contactLastName, contactPhone, demoAccountRequired, notes", lines)
+
+    def test_build_choice(self):
+        fake = self.tool.fake(complete=False)
+        pre = fake.all("preReleaseVersions")[0]
+        rel = {"preReleaseVersion": {"type": "preReleaseVersions", "id": pre["id"]}}
+        b8 = fake.add("builds", {"version": "8", "processingState": "VALID", "expired": False,
+                                 "uploadedDate": "2026-09-02T10:00:00Z"}, parent="900001", rels=rel)
+        fake.add("builds", {"version": "9", "processingState": "PROCESSING", "expired": False,
+                            "uploadedDate": "2026-09-03T10:00:00Z"}, parent="900001", rels=rel)
+        other = fake.add("preReleaseVersions", {"version": "2.0"}, parent="900001")
+        fake.add("builds", {"version": "10", "processingState": "VALID", "expired": False,
+                            "uploadedDate": "2026-09-04T10:00:00Z"}, parent="900001",
+                 rels={"preReleaseVersion": {"type": "preReleaseVersions", "id": other["id"]}})
+        code, lines = self.apply(fake, ["--steps", "build"])
+        self.assertEqual(code, 0)
+        patch = self.writes(fake)[0]
+        self.assertEqual(patch["body"]["data"]["id"], b8["id"])
+        self.assertIn("SET build: attached build 8 to version 1.0", lines)
+        fake2 = self.tool.fake(complete=False)
+        older = fake2.all("builds")[0]
+        fake2.add("builds", {"version": "8", "processingState": "VALID", "expired": False,
+                             "uploadedDate": "2026-09-02T10:00:00Z"}, parent="900001",
+                  rels={"preReleaseVersion": {"type": "preReleaseVersions", "id": fake2.all("preReleaseVersions")[0]["id"]}})
+        code, lines = self.apply(fake2, ["--steps", "build", "--build-number", "7"])
+        self.assertEqual(code, 0)
+        self.assertEqual(self.writes(fake2)[0]["body"]["data"]["id"], older["id"])
+        code, lines = self.apply(fake2, ["--steps", "build", "--build-number", "99"])
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL build: no valid build number 99 exists for version 1.0", lines)
+
+    def test_build_already_attached_and_no_build(self):
+        fake = self.tool.fake()
+        _c, lines = self.apply(fake, ["--steps", "build"])
+        self.assertIn("SKIP build: build 7 is already attached", lines)
+        self.assertEqual(self.writes(fake), [])
+        fake = self.tool.fake(complete=False)
+        fake.db["builds"].clear()
+        code, lines = self.apply(fake, ["--steps", "build"])
+        self.assertEqual(code, 0)
+        self.assertTrue(any(l.startswith("SKIP build: no valid build exists for version 1.0") for l in lines))
+
+    def test_failed_step_continues_and_exit_is_1(self):
+        fake = self.tool.fake(complete=False)
+        fake.failures.append(("PATCH", r"ageRatingDeclarations", 409, [
+            {"code": "ENTITY_ERROR", "title": "Bad",
+             "detail": "for %s and %s id 1234567890" % (FAKE_BUNDLE, CONTACT["REVIEW_CONTACT_EMAIL"])}]))
+        code, lines = self.apply(fake)
+        self.assertEqual(code, 1)
+        fail = [l for l in lines if l.startswith("FAIL")]
+        self.assertEqual(len(fail), 1)
+        self.assertIn("HTTP 409", fail[0])
+        blob = "\n".join(lines)
+        for secret in (FAKE_BUNDLE, CONTACT["REVIEW_CONTACT_EMAIL"], "1234567890"):
+            self.assertNotIn(secret, blob)
+        self.assertTrue(any(e["path"] == "/v1/appPriceSchedules" for e in self.writes(fake)), "later steps still ran")
+        self.assertTrue(lines[-1].startswith("RESULT: 1 step(s) failed"))
+
+    def test_steps_flag(self):
+        fake = self.tool.fake(complete=False)
+        code, lines = self.apply(fake, ["--steps", "copyright,contentrights"])
+        self.assertEqual(code, 0)
+        self.assertEqual(sorted(e["path"] for e in self.writes(fake)),
+                         sorted(["/v1/appStoreVersions/%s" % fake.all("appStoreVersions")[0]["id"], "/v1/apps/900001"]))
+        self.assertIn("SKIP price: not selected with --steps", lines)
+        code, lines = self.apply(fake, ["--steps", "nonsense"])
+        self.assertEqual(code, 2)
+
+    def test_invalid_listing_stops_before_any_request(self):
+        path = self.listing_copy(name="n" * 31, keywords="k" * 101, description="d" * 4001)
+        fake = self.tool.fake(complete=False)
+        code, lines = self.apply(fake, listing=path)
+        self.assertEqual(code, 1)
+        self.assertEqual(fake.log, [])
+        self.assertIn("ERROR listing: name: 31 characters, the limit is 30", lines)
+        self.assertIn("ERROR listing: keywords: 101 characters, the limit is 100", lines)
+        self.assertIn("ERROR listing: description: 4001 characters, the limit is 4000", lines)
+
+    def test_missing_listing_stops(self):
+        fake = self.tool.fake(complete=False)
+        code, _lines = self.apply(fake, listing=os.path.join(HERE, "absent.json"))
+        self.assertEqual(code, 1)
+        self.assertEqual(fake.log, [])
+
+    def test_never_deletes_and_never_submits(self):
+        fake = self.tool.fake(complete=False)
+        self.apply(fake)
+        self.apply(fake)
+        for entry in fake.log:
+            self.assertNotEqual(entry["method"], "DELETE")
+            self.assertNotRegex(entry["path"], r"(?i)submission|submit")
+
+    def test_price_schedule_present_is_left_alone(self):
+        fake = self.tool.fake()
+        code, lines = self.apply(fake, ["--steps", "price"])
+        self.assertEqual(code, 0)
+        self.assertIn("SKIP price schedule: a price schedule already exists", lines)
+        self.assertEqual(self.writes(fake), [])
+
+    def test_no_free_price_point_fails(self):
+        fake = self.tool.fake(complete=False)
+        del fake.db["appPricePoints"]["pp-free"]
+        code, lines = self.apply(fake, ["--steps", "price"])
+        self.assertEqual(code, 1)
+        self.assertTrue(any(l.startswith("FAIL price schedule: no Free price point") for l in lines))
+
+    def test_app_or_version_missing(self):
+        fake = self.tool.fake(complete=False)
+        fake.db["apps"].clear()
+        code, lines = self.apply(fake)
+        self.assertEqual(code, 1)
+        self.assertTrue(any(l.startswith("FAIL app record") for l in lines))
+        fake = self.tool.fake(complete=False)
+        fake.all("appStoreVersions")[0]["attributes"]["appVersionState"] = "IN_REVIEW"
+        code, _lines = self.apply(fake)
+        self.assertEqual(code, 1)
+        self.assertEqual(self.writes(fake), [])
+
+    def test_rejected_credentials_exit_2(self):
+        fake = self.tool.fake(complete=False)
+        fake.public_key = new_key().public_key()
+        code, _lines = self.apply(fake)
+        self.assertEqual(code, 2)
+
+
 class ListingTests(unittest.TestCase):
     def load(self):
         with open(LISTING_PATH, encoding="utf-8") as fh:

@@ -965,6 +965,334 @@ def run_check(api, out, bundle_id, listing):
     return Checker(api, out, bundle_id, listing).run()
 
 
+# ----------------------------------------------------------------- apply ----
+
+STEP_NAMES = ("localisation", "appinfo", "copyright", "agerating", "contentrights",
+              "build", "review", "screenshots", "price")
+RELEASED_STATES = (
+    "READY_FOR_SALE", "REPLACED_WITH_NEW_VERSION", "REMOVED_FROM_SALE", "DEVELOPER_REMOVED_FROM_SALE",
+    "PENDING_DEVELOPER_RELEASE", "PENDING_APPLE_RELEASE", "PROCESSING_FOR_APP_STORE",
+    "READY_FOR_DISTRIBUTION",
+)
+FREE_PRICE_REF = "${local-price-1}"
+
+
+def contact_from_env(env=None):
+    """Return the four review contact values, or None when any one is absent."""
+    env = os.environ if env is None else env
+    values = [env.get(name, "").strip() for name in REVIEW_CONTACT_ENV]
+    if not all(values):
+        return None
+    return {
+        "contactFirstName": values[0],
+        "contactLastName": values[1],
+        "contactPhone": values[2],
+        "contactEmail": values[3],
+    }
+
+
+def changed(current, desired):
+    """Return the part of desired that differs from current."""
+    return {k: v for k, v in desired.items() if current.get(k) != v}
+
+
+def wanted(listing, keys):
+    """Values from the listing for keys that hold a non-empty value."""
+    out = {}
+    for key in keys:
+        value = listing.get(key)
+        if isinstance(value, str) and value.strip() == "":
+            continue
+        if value is None:
+            continue
+        out[key] = value
+    return out
+
+
+class Applier:
+    """Idempotent writes. Never deletes, never submits and never creates a review submission."""
+
+    def __init__(self, api, out, bundle_id, listing, steps=STEP_NAMES, build_number=None,
+                 screenshots_dir=None, replace_screenshots=False, base_territory="USA",
+                 contact=None, sleep=time.sleep, clock=time.time):
+        self.api = api
+        self.out = out
+        self.bundle_id = bundle_id
+        self.listing = listing
+        self.steps = tuple(steps)
+        self.build_number = build_number
+        self.screenshots_dir = screenshots_dir
+        self.replace_screenshots = replace_screenshots
+        self.base_territory = base_territory
+        self.contact = contact
+        self.sleep = sleep
+        self.clock = clock
+        self.failed = 0
+        self.locale = listing["locale"]
+        self.app_id = None
+        self.version = None
+        self.versions = []
+        self.info = None
+
+    # -- reporting
+    def set(self, step, text):
+        self.out.line("SET", step, text)
+
+    def skip(self, step, text):
+        self.out.line("SKIP", step, text)
+
+    def fail(self, step, text):
+        self.failed += 1
+        self.out.line("FAIL", step, text)
+
+    def guarded(self, step, fn):
+        try:
+            fn()
+        except AscError as err:
+            if err.status == 401:
+                raise AuthError("the API rejected the credentials (HTTP 401)") from None
+            self.fail(step, err.describe())
+        except ConfigError as exc:
+            self.fail(step, str(exc))
+
+    # -- the run
+    def run(self):
+        try:
+            app = find_app(self.api, self.bundle_id)
+        except AscError as err:
+            if err.status in (401, 403):
+                raise AuthError("the API rejected the credentials or the key role (HTTP %d)" % err.status) from None
+            raise
+        if app is None:
+            self.fail("app record", "no app has this bundle id: create it in App Store Connect, Apps, New App")
+            return self.finish()
+        self.app_id = app["id"]
+        mask_for_ci(self.app_id, self.out)
+        self.app = app
+        try:
+            self.versions = list_versions(self.api, self.app_id)
+            self.version = pick_editable(self.versions)
+            self.info = pick_app_info(self.api, self.app_id)
+        except AscError as err:
+            if err.status == 401:
+                raise AuthError("the API rejected the credentials (HTTP 401)") from None
+            self.fail("lookup", err.describe())
+            return self.finish()
+        if self.version is None:
+            self.fail("editable version", "no version can be edited: create a new version in App Store Connect")
+            return self.finish()
+        table = {
+            "localisation": self.step_localisation,
+            "appinfo": self.step_appinfo,
+            "copyright": self.step_copyright,
+            "agerating": self.step_agerating,
+            "contentrights": self.step_contentrights,
+            "build": self.step_build,
+            "review": self.step_review,
+            "screenshots": self.step_screenshots,
+            "price": self.step_price,
+        }
+        for name in STEP_NAMES:
+            if name not in self.steps:
+                self.skip(name, "not selected with --steps")
+                continue
+            self.guarded(name, table[name])
+        return self.finish()
+
+    def finish(self):
+        if self.failed:
+            self.out.raw("RESULT: %d step(s) failed. Nothing was submitted." % self.failed)
+            return 1
+        self.out.raw("RESULT: apply finished. Run check, then do the manual steps. Nothing was submitted.")
+        return 0
+
+    # -- helpers
+    def upsert(self, rtype, parent_rel, parent_type, parent_id, current_list, desired, label):
+        """Create or update a localisation-style resource for the listing locale."""
+        item = "%s %s" % (label, self.locale)
+        current = next((r for r in current_list if attrs(r).get("locale") == self.locale), None)
+        if not desired:
+            self.skip(item, "the listing has no values")
+            return
+        if current is None:
+            body = {"data": {"type": rtype, "attributes": dict(desired, locale=self.locale),
+                             "relationships": {parent_rel: {"data": {"type": parent_type, "id": parent_id}}}}}
+            self.api.post("/v1/%s" % rtype, body)
+            self.set(item, "created: %s" % ", ".join(sorted(desired)))
+            return
+        diff = changed(attrs(current), desired)
+        if not diff:
+            self.skip(item, "already up to date")
+            return
+        self.api.patch("/v1/%s/%s" % (rtype, current["id"]),
+                       {"data": {"type": rtype, "id": current["id"], "attributes": diff}})
+        self.set(item, "updated: %s" % ", ".join(sorted(diff)))
+
+    def first_version(self):
+        return not any(version_state(v) in RELEASED_STATES for v in self.versions
+                       if v["id"] != self.version["id"])
+
+    # -- steps
+    def step_localisation(self):
+        fields = ["description", "keywords", "promotionalText", "supportUrl", "marketingUrl", "whatsNew"]
+        if self.first_version():
+            if wanted(self.listing, ["whatsNew"]):
+                self.skip("localisation", "what's new is not set because this is the first version")
+            fields.remove("whatsNew")
+        desired = wanted(self.listing, fields)
+        current = version_localisations(self.api, self.version["id"])
+        self.upsert("appStoreVersionLocalizations", "appStoreVersion", "appStoreVersions",
+                    self.version["id"], current, desired, "version localisation")
+
+    def step_appinfo(self):
+        if self.info is None:
+            self.fail("appinfo", "no app info record was found")
+            return
+        iid = self.info["id"]
+        desired = wanted(self.listing, ["name", "subtitle", "privacyPolicyUrl"])
+        current = info_localisations(self.api, iid)
+        self.upsert("appInfoLocalizations", "appInfo", "appInfos", iid, current, desired,
+                    "app info localisation")
+        rels = {}
+        done = []
+        for key in ("primaryCategory", "secondaryCategory"):
+            value = self.listing.get(key)
+            if not value:
+                continue
+            if rel_id(self.info, key) != value:
+                rels[key] = {"data": {"type": "appCategories", "id": value}}
+                done.append(key)
+        if rels:
+            self.api.patch("/v1/appInfos/%s" % iid,
+                           {"data": {"type": "appInfos", "id": iid, "relationships": rels}})
+            self.set("categories", "updated: %s" % ", ".join(done))
+        else:
+            self.skip("categories", "already up to date or not in the listing")
+
+    def step_copyright(self):
+        value = self.listing.get("copyright")
+        if not value:
+            self.skip("copyright", "the listing has no value")
+            return
+        if attrs(self.version).get("copyright") == value:
+            self.skip("copyright", "already up to date")
+            return
+        self.api.patch("/v1/appStoreVersions/%s" % self.version["id"], {
+            "data": {"type": "appStoreVersions", "id": self.version["id"], "attributes": {"copyright": value}}})
+        self.set("copyright", "updated")
+
+    def step_agerating(self):
+        answers = {k: v for k, v in (self.listing.get("ageRating") or {}).items() if v is not None}
+        if not answers:
+            self.skip("age rating", "the listing has no answers")
+            return
+        if self.info is None:
+            self.fail("age rating", "no app info record was found")
+            return
+        decl = age_declaration(self.api, self.info["id"])
+        if decl is None:
+            self.fail("age rating", "no age rating declaration exists to update")
+            return
+        diff = changed(attrs(decl), answers)
+        if not diff:
+            self.skip("age rating", "already up to date")
+            return
+        self.api.patch("/v1/ageRatingDeclarations/%s" % decl["id"], {
+            "data": {"type": "ageRatingDeclarations", "id": decl["id"], "attributes": diff}})
+        self.set("age rating", "updated %d answer(s): %s" % (len(diff), ", ".join(sorted(diff))))
+
+    def step_contentrights(self):
+        value = self.listing.get("contentRightsDeclaration")
+        if not value:
+            self.skip("content rights", "the listing has no value")
+            return
+        if attrs(self.app).get("contentRightsDeclaration") == value:
+            self.skip("content rights", "already up to date")
+            return
+        self.api.patch("/v1/apps/%s" % self.app_id, {
+            "data": {"type": "apps", "id": self.app_id, "attributes": {"contentRightsDeclaration": value}}})
+        self.set("content rights", "updated")
+
+    def step_build(self):
+        vstring = attrs(self.version).get("versionString") or ""
+        builds = list_builds(self.api, self.app_id, vstring)
+        valid = [b for b in builds if attrs(b).get("processingState") == "VALID" and not attrs(b).get("expired")]
+        if self.build_number is not None:
+            chosen = next((b for b in valid if attrs(b).get("version") == str(self.build_number)), None)
+            if chosen is None:
+                self.fail("build", "no valid build number %s exists for version %s" % (self.build_number, vstring))
+                return
+        else:
+            chosen = newest_valid_build(builds)
+            if chosen is None:
+                self.skip("build", "no valid build exists for version %s: upload one and wait for processing" % vstring)
+                return
+        current, _pre = attached_build(self.api, self.version["id"])
+        if current is not None and current["id"] == chosen["id"]:
+            self.skip("build", "build %s is already attached" % attrs(chosen).get("version"))
+            return
+        self.api.patch("/v1/appStoreVersions/%s/relationships/build" % self.version["id"],
+                       {"data": {"type": "builds", "id": chosen["id"]}})
+        self.set("build", "attached build %s to version %s" % (attrs(chosen).get("version"), vstring))
+
+    def step_review(self):
+        desired = {}
+        notes = self.listing.get("reviewNotes")
+        if isinstance(notes, str) and notes.strip():
+            desired["notes"] = notes
+        if isinstance(self.listing.get("reviewDemoRequired"), bool):
+            desired["demoAccountRequired"] = self.listing["reviewDemoRequired"]
+        if self.contact:
+            desired.update(self.contact)
+        else:
+            self.skip("review contact", "the REVIEW_CONTACT_* secrets are not all set: enter the contact in App Store Connect")
+        if not desired:
+            self.skip("app review details", "the listing has no values")
+            return
+        vid = self.version["id"]
+        detail = review_detail(self.api, vid)
+        fields = ", ".join(sorted(desired))
+        if detail is None:
+            self.api.post("/v1/appStoreReviewDetails", {"data": {
+                "type": "appStoreReviewDetails", "attributes": desired,
+                "relationships": {"appStoreVersion": {"data": {"type": "appStoreVersions", "id": vid}}}}})
+            self.set("app review details", "created: %s" % fields)
+            return
+        diff = changed(attrs(detail), desired)
+        if not diff:
+            self.skip("app review details", "already up to date")
+            return
+        self.api.patch("/v1/appStoreReviewDetails/%s" % detail["id"], {
+            "data": {"type": "appStoreReviewDetails", "id": detail["id"], "attributes": diff}})
+        self.set("app review details", "updated: %s" % ", ".join(sorted(diff)))
+
+    def step_screenshots(self):
+        self.skip("screenshots", "no --screenshots-dir was given") if not self.screenshots_dir else None
+
+    def step_price(self):
+        if price_schedule(self.api, self.app_id) is not None:
+            self.skip("price schedule", "a price schedule already exists")
+            return
+        points, _ = self.api.get_all("/v1/apps/%s/appPricePoints" % self.app_id,
+                                     {"filter[territory]": self.base_territory, "limit": "200"})
+        free = next((p for p in points if is_zero(attrs(p).get("customerPrice"))), None)
+        if free is None:
+            self.fail("price schedule", "no Free price point was found for the base territory")
+            return
+        self.api.post("/v1/appPriceSchedules", {
+            "data": {"type": "appPriceSchedules", "relationships": {
+                "app": {"data": {"type": "apps", "id": self.app_id}},
+                "baseTerritory": {"data": {"type": "territories", "id": self.base_territory}},
+                "manualPrices": {"data": [{"type": "appPrices", "id": FREE_PRICE_REF}]}}},
+            "included": [{"type": "appPrices", "id": FREE_PRICE_REF, "attributes": {"startDate": None},
+                          "relationships": {"appPricePoint": {"data": {"type": "appPricePoints", "id": free["id"]}}}}]})
+        self.set("price schedule", "Free set for the base territory")
+
+
+def run_apply(api, out, bundle_id, listing, **kw):
+    return Applier(api, out, bundle_id, listing, **kw).run()
+
+
 # ---------------------------------------------------------------- CLI -------
 
 def read_env(out):
@@ -974,6 +1302,8 @@ def read_env(out):
     key_path = os.environ.get("ASC_API_KEY_P8_PATH", "").strip()
     for value in (key_id, issuer, bundle):
         out.add_secret(value)
+    for name in REVIEW_CONTACT_ENV:
+        out.add_secret(os.environ.get(name, ""))
     problems = []
     if not KEY_ID_RE.match(key_id):
         problems.append("ASC_API_KEY_ID is missing or has the wrong shape")
@@ -996,7 +1326,26 @@ def build_parser():
                      help="path to listing.json (optional for check, ignored when the file is absent)")
     app = sub.add_parser("apply", help="write listing data, build and screenshots")
     app.add_argument("--listing", default="AppStore/listing.json")
+    app.add_argument("--steps", default="all",
+                     help="comma separated subset of: " + ", ".join(STEP_NAMES) + " (default all)")
+    app.add_argument("--build-number", default=None,
+                     help="attach this build number instead of the newest valid build")
+    app.add_argument("--screenshots-dir", default=None,
+                     help="directory with one sub folder per display type, for example APP_IPHONE_67")
+    app.add_argument("--replace-screenshots", action="store_true",
+                     help="replace a screenshot set that already holds screenshots")
+    app.add_argument("--base-territory", default="USA", help="territory for the Free price (default USA)")
     return parser
+
+
+def parse_steps(text):
+    if text.strip() in ("", "all"):
+        return STEP_NAMES
+    names = tuple(x.strip() for x in text.split(",") if x.strip())
+    unknown = [n for n in names if n not in STEP_NAMES]
+    if unknown:
+        raise ConfigError("unknown step name(s): %s" % ", ".join(unknown))
+    return names
 
 
 def main(argv=None, transport=None, sleep=time.sleep, clock=time.time, stream=None):
@@ -1017,13 +1366,37 @@ def main(argv=None, transport=None, sleep=time.sleep, clock=time.time, stream=No
             return 1
         listing = None
         out.raw("INFO listing: ignored for check because it is not valid")
+    steps, build_number, contact = STEP_NAMES, None, None
+    if args.command == "apply":
+        if listing is None:
+            out.raw("ERROR listing: the listing file was not found")
+            return 1
+        try:
+            steps = parse_steps(args.steps)
+            if args.build_number is not None:
+                if not re.match(r"^[0-9]{1,9}$", str(args.build_number)):
+                    raise ConfigError("--build-number must be a whole number")
+                build_number = str(int(args.build_number))
+            if args.screenshots_dir and not os.path.isdir(args.screenshots_dir):
+                raise ConfigError("--screenshots-dir is not a directory")
+        except ConfigError as exc:
+            out.raw("ERROR configuration: %s" % exc)
+            return 2
+        contact = contact_from_env()
+        for value in (contact or {}).values():
+            out.add_secret(value)
     try:
         if args.command == "check":
             code = run_check(api, out, bundle, listing)
             out.write_summary("App Store Connect check")
             return code
-        out.raw("ERROR apply is not implemented yet")
-        return 2
+        code = run_apply(api, out, bundle, listing, steps=steps, build_number=build_number,
+                         screenshots_dir=args.screenshots_dir,
+                         replace_screenshots=args.replace_screenshots,
+                         base_territory=args.base_territory, contact=contact,
+                         sleep=sleep, clock=clock)
+        out.write_summary("App Store Connect apply")
+        return code
     except AuthError as exc:
         out.raw("ERROR credentials: %s" % exc)
         return 2
