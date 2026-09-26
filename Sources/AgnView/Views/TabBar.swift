@@ -191,7 +191,7 @@ struct TabBarClearance: ViewModifier {
             content.safeAreaInset(edge: .bottom, spacing: 0) {
                 Color.clear
                     .frame(height: nav.keyboardVisible
-                           ? 0 : TabBarMetrics.contentInset(safeBottom: SafeArea.bottom))
+                           ? 0 : TabBarMetrics.contentInset(safeBottom: nav.safeBottom))
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }

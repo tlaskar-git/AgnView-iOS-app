@@ -77,8 +77,14 @@ private struct NavChrome: ViewModifier {
 private struct PhoneShell: View {
     @ObservedObject var nav: NavState
 
+    /// Counts the changes of the navigation state. The shell reads it, so a
+    /// change of the selected tab or of the keyboard always draws again.
+    @State private var changes = 0
+    @Environment(\.verticalSizeClass) private var verticalSize
+
     var body: some View {
-        let safeBottom = SafeArea.bottom
+        _ = changes
+        let safeBottom = nav.safeBottom
         return TabView(selection: $nav.screen) {
             ForEach(Screen.phoneOrder) { screen in
                 NavigationStack {
@@ -96,6 +102,11 @@ private struct PhoneShell: View {
                 .opacity(nav.keyboardVisible ? 0 : 1)
                 .allowsHitTesting(!nav.keyboardVisible)
                 .accessibilityHidden(nav.keyboardVisible)
+        }
+        .onReceive(nav.objectWillChange) { _ in changes &+= 1 }
+        .onAppear { nav.safeBottom = SafeArea.bottom }
+        .onChange(of: verticalSize) { _, _ in
+            DispatchQueue.main.async { nav.safeBottom = SafeArea.bottom }
         }
     }
 }

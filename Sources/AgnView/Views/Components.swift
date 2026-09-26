@@ -8,6 +8,9 @@ final class NavState: ObservableObject {
     /// True while the software keyboard is up. The tab bar hides and the
     /// screens stop reserving room for it.
     @Published var keyboardVisible = false
+    /// The room the home indicator takes at the bottom. Read once the window
+    /// exists and again when the device turns, never during a view update.
+    @Published var safeBottom: CGFloat = 0
     /// A short confirmation that fades by itself, such as "Switched to Studio".
     @Published private(set) var toast: String?
     private var toastTask: Task<Void, Never>?
