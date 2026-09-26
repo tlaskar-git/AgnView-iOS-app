@@ -58,74 +58,55 @@ struct PipelinesView: View {
     @State private var opened: OpenedJob?
 
     var body: some View {
-        ScreenChrome(screen: .pipelines, onRefresh: { await model.refreshJobs() }) {
-            VStack(alignment: .leading, spacing: Theme.spacing) {
-                HStack(alignment: .center) {
-                    Text("Tap a pipeline to open its tasks")
-                        .font(.footnote)
-                        .foregroundStyle(Theme.textSecondary)
-                    Spacer()
-                    Button {
-                        showNew = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.headline)
-                            .foregroundStyle(Color.white)
-                            .frame(width: Theme.minTap, height: Theme.minTap)
-                            .background(Circle().fill(Theme.action))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!model.canManageJobs)
-                    .opacity(model.canManageJobs ? 1 : 0.4)
-                    .accessibilityLabel("New pipeline")
-                    .accessibilityIdentifier("pipelines-new")
-                }
+        ScreenChrome(screen: .pipelines, trailing: { newButton }) {
+            List {
+                BannerSection()
                 if let notice = model.jobsNotice {
-                    Banner(kind: .info, text: notice, identifier: "pipelines-notice")
+                    Section {
+                        Banner(kind: .info, text: notice, identifier: "pipelines-notice", card: false)
+                    }
                 } else if let notice = model.pipelineCreateNotice {
-                    Banner(kind: .info, text: notice, identifier: "pipelines-create-notice")
+                    Section {
+                        Banner(kind: .info, text: notice, identifier: "pipelines-create-notice", card: false)
+                    }
                 }
                 if let message = model.jobsState.failureMessage {
-                    PanelErrorCard(message: message, prefix: "pipelines") {
-                        Task { await model.retryJobs() }
+                    Section {
+                        PanelErrorCard(message: message, prefix: "pipelines", inList: true) {
+                            Task { await model.retryJobs() }
+                        }
                     }
                 }
-                if model.jobs.isEmpty {
-                    Text(model.jobsNotice == nil ? "No pipelines yet." : "No pipeline reading on this connection.")
-                        .font(.body)
-                        .foregroundStyle(Theme.textSecondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .card()
-                        .accessibilityIdentifier("pipelines-empty")
-                } else {
-                    ForEach(model.jobs) { job in
-                        NavigationLink {
-                            JobDetailView(jobId: job.id)
-                        } label: {
-                            JobRow(job: job, reservesMenuSpace: true)
+                Section {
+                    if model.jobs.isEmpty {
+                        Text(model.jobsNotice == nil ? "No pipelines yet." : "No pipeline reading on this connection.")
+                            .foregroundStyle(Theme.textSecondary)
+                            .frame(minHeight: Theme.minTap, alignment: .leading)
+                            .accessibilityIdentifier("pipelines-empty")
+                    } else {
+                        ForEach(model.jobs) { job in
+                            NavigationLink {
+                                JobDetailView(jobId: job.id)
+                            } label: {
+                                JobRow(job: job, reservesMenuSpace: true)
+                            }
+                            .overlay(alignment: .topTrailing) {
+                                PipelineMenu(job: job, popsOnDelete: false)
+                                    .padding(.top, 4)
+                            }
+                            .accessibilityIdentifier("job-row")
                         }
-                        .buttonStyle(.plain)
-                        .overlay(alignment: .topTrailing) {
-                            PipelineMenu(job: job, popsOnDelete: false)
-                                .padding(.top, 8)
-                                .padding(.trailing, 8)
-                        }
-                        .accessibilityIdentifier("job-row")
+                    }
+                } footer: {
+                    if !model.jobs.isEmpty {
+                        Text("Tap a pipeline to open its tasks")
                     }
                 }
             }
-            .padding(.bottom, 16)
-            .background {
-                // Opens the new pipeline. A link rather than a navigation
-                // destination, so it also works in the iPad detail column.
-                NavigationLink(isActive: Binding(get: { opened != nil },
-                                                 set: { if !$0 { opened = nil } })) {
-                    if let opened { JobDetailView(jobId: opened.id) }
-                } label: {
-                    EmptyView()
-                }
-                .hidden()
-                .accessibilityHidden(true)
+            .refreshable { await model.refreshJobs() }
+            // Opens the new pipeline once it is created.
+            .navigationDestination(item: $opened) { job in
+                JobDetailView(jobId: job.id)
             }
         }
         .sheet(isPresented: $showNew) {
@@ -140,6 +121,18 @@ struct PipelinesView: View {
                 try? await Task.sleep(nanoseconds: 15_000_000_000)
             }
         }
+    }
+
+    private var newButton: some View {
+        Button {
+            showNew = true
+        } label: {
+            Label("New pipeline", systemImage: "plus")
+                .labelStyle(.iconOnly)
+        }
+        .disabled(!model.canManageJobs)
+        .accessibilityLabel("New pipeline")
+        .accessibilityIdentifier("pipelines-new")
     }
 }
 
@@ -159,7 +152,7 @@ struct JobRow: View {
             HStack(alignment: .top) {
                 Text(job.title)
                     .font(.headline)
-                    .foregroundStyle(Theme.textMain)
+                    .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
                 Spacer()
                 StatusPill(text: job.status.label, tint: job.status.tint)
@@ -174,7 +167,6 @@ struct JobRow: View {
                 .foregroundStyle(Theme.textSecondary)
         }
         .frame(minHeight: Theme.minTap)
-        .card()
         .accessibilityElement(children: .combine)
     }
 }
@@ -349,13 +341,13 @@ struct JobDetailView: View {
     private var job: Job? { model.jobs.first { $0.id == jobId } }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Theme.spacing) {
-                if let job {
+        List {
+            if let job {
+                Section {
                     HStack(alignment: .top) {
                         Text(job.title)
                             .font(.title2.bold())
-                            .foregroundStyle(Theme.textMain)
+                            .foregroundStyle(.primary)
                             .accessibilityIdentifier("job-detail-title")
                         Spacer()
                         StatusPill(text: job.status.label, tint: job.status.tint)
@@ -366,21 +358,20 @@ struct JobDetailView: View {
                             .foregroundStyle(Theme.textSecondary)
                     }
                     JobRow(job: job)
-                    Text("Tasks")
-                        .font(.headline)
-                        .foregroundStyle(Theme.textMain)
+                }
+                Section("Tasks") {
                     ForEach(job.tasks) { task in
                         TaskRow(task: task)
                     }
-                } else {
+                }
+            } else {
+                Section {
                     Text("This pipeline is no longer listed.")
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
-            .padding(Theme.screenPadding)
         }
         .refreshable { await model.refreshJobs() }
-        .background(Theme.page.ignoresSafeArea())
         .navigationTitle("Pipeline")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
@@ -403,7 +394,7 @@ struct TaskRow: View {
             HStack(alignment: .top) {
                 Text(task.title)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.textMain)
+                    .foregroundStyle(.primary)
                 Spacer()
                 StatusPill(text: task.status.label, tint: task.status.tint)
             }
@@ -431,7 +422,6 @@ struct TaskRow: View {
                     .lineLimit(4)
             }
         }
-        .card()
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("task-row")
     }

@@ -4,26 +4,24 @@ struct UsageView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        ScreenChrome(screen: .usage, onRefresh: { await model.refreshUsageFromHub() }) {
-            VStack(alignment: .leading, spacing: Theme.spacing) {
-                HStack {
+        ScreenChrome(screen: .usage, trailing: { refreshButton }) {
+            List {
+                BannerSection()
+                Section {
                     Text(model.canRefreshUsageOnHub ? "Refresh asks the hub to read every provider again"
                                                     : "Refresh reads the figures the hub already holds")
-                        .font(.footnote)
-                        .foregroundStyle(Theme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer()
-                    PillButton(title: "Refresh", symbol: "arrow.clockwise", identifier: "usage-refresh",
-                               busy: model.usageRefreshing) {
-                        Task { await model.refreshUsageFromHub() }
-                    }
+                        .captionRow()
                 }
                 if let notice = model.usageNotice {
-                    Banner(kind: .info, text: notice, identifier: "usage-notice")
+                    Section {
+                        Banner(kind: .info, text: notice, identifier: "usage-notice", card: false)
+                    }
                 }
                 if let message = model.usageState.failureMessage {
-                    PanelErrorCard(message: message, prefix: "usage") {
-                        Task { await model.retryUsage() }
+                    Section {
+                        PanelErrorCard(message: message, prefix: "usage", inList: true) {
+                            Task { await model.retryUsage() }
+                        }
                     }
                 }
                 if let snapshot = model.usageSnapshot, !snapshot.accounts.isEmpty {
@@ -32,15 +30,15 @@ struct UsageView: View {
                                   stale: !model.usageIsLive || model.usageState.failureMessage != nil)
                     }
                 } else if model.usageState.failureMessage == nil {
-                    Text(model.usageIsLive ? "Reading usage from the hub." : "No usage reading yet.")
-                        .font(.body)
-                        .foregroundStyle(Theme.textSecondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .card()
-                        .accessibilityIdentifier("usage-empty")
+                    Section {
+                        Text(model.usageIsLive ? "Reading usage from the hub." : "No usage reading yet.")
+                            .foregroundStyle(Theme.textSecondary)
+                            .frame(minHeight: Theme.minTap, alignment: .leading)
+                            .accessibilityIdentifier("usage-empty")
+                    }
                 }
             }
-            .padding(.bottom, 16)
+            .refreshable { await model.refreshUsageFromHub() }
         }
         .task(id: model.usageIsLive) {
             while !Task.isCancelled {
@@ -48,6 +46,22 @@ struct UsageView: View {
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
             }
         }
+    }
+
+    private var refreshButton: some View {
+        Button {
+            Task { await model.refreshUsageFromHub() }
+        } label: {
+            if model.usageRefreshing {
+                ProgressView()
+            } else {
+                Label("Refresh", systemImage: "arrow.clockwise")
+                    .labelStyle(.iconOnly)
+            }
+        }
+        .disabled(model.usageRefreshing)
+        .accessibilityLabel("Refresh")
+        .accessibilityIdentifier("usage-refresh")
     }
 }
 
@@ -62,6 +76,8 @@ private func providerTint(_ provider: String) -> Color {
     }
 }
 
+/// One account as a section of rows: who it is, its limit windows, its
+/// figures and when the hub last read it.
 struct UsageCard: View {
     let account: UsageAccount
     let takenAt: Date
@@ -70,7 +86,7 @@ struct UsageCard: View {
     private var hubStale: Bool { account.usage?.isStale ?? false }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        Section {
             header
             if let plan = account.displayPlan {
                 Text("Plan limits: " + plan)
@@ -88,17 +104,9 @@ struct UsageCard: View {
             if let usage = account.usage {
                 ForEach(usage.windows) { window in
                     UsageWindowView(window: window, child: false)
-                    if !window.breakdown.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ForEach(window.breakdown) { child in
-                                UsageWindowView(window: child, child: true)
-                            }
-                        }
-                        .padding(.leading, 10)
-                        .overlay(alignment: .leading) {
-                            Rectangle().fill(Theme.border).frame(width: 1)
-                        }
-                        .padding(.leading, 4)
+                    ForEach(window.breakdown) { child in
+                        UsageWindowView(window: child, child: true)
+                            .padding(.leading, 16)
                     }
                 }
             } else {
@@ -107,10 +115,6 @@ struct UsageCard: View {
             figures
             footer
         }
-        .card()
-        .opacity(stale ? 0.55 : 1)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("usage-card")
     }
 
     // MARK: Pieces
@@ -127,14 +131,19 @@ struct UsageCard: View {
                 .accessibilityIdentifier("provider-" + account.provider)
             Text(account.name)
                 .font(.headline)
-                .foregroundStyle(Theme.textMain)
+                .foregroundStyle(.primary)
                 .lineLimit(1)
             Spacer(minLength: 4)
+            if stale {
+                StatusPill(text: "Out of date", tint: Theme.warning)
+                    .accessibilityIdentifier("usage-stale")
+            }
             if let status = account.status, !status.isEmpty {
                 StatusPill(text: status.capitalized, tint: statusTint(status))
                     .accessibilityIdentifier("usage-status")
             }
         }
+        .frame(minHeight: Theme.minTap)
     }
 
     private struct FigureCell {
@@ -165,15 +174,13 @@ struct UsageCard: View {
                 ForEach(cells, id: \.title) { cell in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(cell.title)
-                            .font(.caption2)
+                            .font(.caption)
                             .foregroundStyle(Theme.textSecondary)
                         Text(cell.value)
                             .font(.footnote.weight(.semibold))
-                            .foregroundStyle(Theme.textMain)
+                            .foregroundStyle(.primary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Theme.raised))
                     .accessibilityElement(children: .combine)
                 }
             }
@@ -195,10 +202,6 @@ struct UsageCard: View {
                 .font(.footnote)
                 .foregroundStyle(hubStale ? Theme.warning : Theme.textSecondary)
                 .accessibilityIdentifier("usage-age")
-        }
-        .padding(.top, 6)
-        .overlay(alignment: .top) {
-            Rectangle().fill(Theme.border).frame(height: 1)
         }
     }
 
@@ -272,7 +275,7 @@ struct UsageWindowView: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(window.label)
                     .font(child ? .caption.weight(.medium) : .subheadline.weight(.medium))
-                    .foregroundStyle(Theme.textMain)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 if let amount = window.amountText {
@@ -281,7 +284,7 @@ struct UsageWindowView: View {
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(Theme.textSecondary)
                             .padding(.horizontal, 4)
-                            .background(RoundedRectangle(cornerRadius: 4).stroke(Theme.border))
+                            .background(RoundedRectangle(cornerRadius: 4).stroke(Theme.textSecondary))
                     }
                     Text(amount)
                         .font((child ? Font.caption : Font.subheadline).weight(.bold))
@@ -311,8 +314,6 @@ struct UsageWindowView: View {
                     .tint(tint)
             }
         }
-        .padding(child ? 8 : 10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.raised))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier(child ? "usage-breakdown" : "usage-window")
     }
@@ -332,7 +333,7 @@ private struct LegacyMetric: View {
                 Spacer()
                 Text(value)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.textMain)
+                    .foregroundStyle(.primary)
             }
             if let fraction {
                 ProgressView(value: fraction)

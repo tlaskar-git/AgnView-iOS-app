@@ -400,6 +400,34 @@ final class ComposerModelTests: XCTestCase {
         XCTAssertEqual(AppVersion.text(from: nil), "Unknown")
     }
 
+    /// The About model returns the bundle's short version string as it is and
+    /// keeps the build number in its own value.
+    func testAboutInfoReturnsTheBundleVersionAndNeverTheBuild() throws {
+        let info = Bundle.main.infoDictionary
+        let short = try XCTUnwrap(info?["CFBundleShortVersionString"] as? String)
+        let build = try XCTUnwrap(info?["CFBundleVersion"] as? String)
+        let about = AboutInfo()
+        XCTAssertEqual(about.version, short)
+        XCTAssertEqual(about.build, build)
+        XCTAssertEqual(about.versionLabel, "Version " + short)
+        for text in [about.version, about.versionLabel] {
+            XCTAssertFalse(text.contains("("), "the version text has a parenthesis: \(text)")
+            XCTAssertFalse(text.contains(")"), "the version text has a parenthesis: \(text)")
+        }
+        XCTAssertFalse(short.hasPrefix("v"), "the marketing version has no leading v")
+        // CI passes the version from project.yml, so the app must carry that one.
+        if let want = ProcessInfo.processInfo.environment["AGNVIEW_EXPECT_VERSION"], !want.isEmpty {
+            XCTAssertEqual(about.version, want, "the built app does not carry the project version")
+        }
+
+        let synthetic = AboutInfo(info: ["CFBundleShortVersionString": " 1.0.3 ", "CFBundleVersion": "57"])
+        XCTAssertEqual(synthetic.version, "1.0.3")
+        XCTAssertEqual(synthetic.build, "57")
+        XCTAssertEqual(synthetic.versionLabel, "Version 1.0.3")
+        XCTAssertFalse(synthetic.versionLabel.contains("57"))
+        XCTAssertEqual(AboutInfo(info: nil).version, "Unknown")
+    }
+
     // MARK: Dispatch body
 
     func testDispatchBodyCarriesModelEffortAndFilesOnlyWhenSet() throws {
