@@ -5,6 +5,42 @@ import SwiftUI
 final class NavState: ObservableObject {
     @Published var screen: Screen = .console
     @Published var showPairing = false
+    /// True while the software keyboard is up. The tab bar hides and the
+    /// screens stop reserving room for it.
+    @Published var keyboardVisible = false
+    /// A short confirmation that fades by itself, such as "Switched to Studio".
+    @Published private(set) var toast: String?
+    private var toastTask: Task<Void, Never>?
+
+    func showToast(_ text: String) {
+        toast = text
+        toastTask?.cancel()
+        toastTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_400_000_000)
+            if !Task.isCancelled { self?.toast = nil }
+        }
+        UIAccessibility.post(notification: .announcement, argument: text)
+    }
+}
+
+/// The toast: a dark capsule under the header.
+struct ToastView: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Color.white)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Capsule().fill(Color(light: 0x1C1C20, dark: 0x3A3A3F)))
+            .shadow(color: Color.black.opacity(0.25), radius: 10, x: 0, y: 4)
+            .padding(.horizontal, 24)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(text)
+            .accessibilityIdentifier("toast")
+    }
 }
 
 struct CardStyle: ViewModifier {
@@ -78,39 +114,6 @@ struct Banner: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier(identifier)
         }
-    }
-}
-
-struct RoutePill: View {
-    @EnvironmentObject private var model: AppModel
-
-    private var label: String {
-        if case .connecting = model.connection, model.activeHub != nil { return "Connecting" }
-        return model.route.label
-    }
-
-    private var tint: Color {
-        switch model.route {
-        case .lan: return Theme.success
-        case .direct, .relay: return Theme.link
-        case .offline: return Theme.textSecondary
-        }
-    }
-
-    /// A coloured dot and the route name. It lives in the navigation bar, so
-    /// the system draws the bar item background and the text stays primary.
-    var body: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(tint)
-                .frame(width: 8, height: 8)
-            Text(label)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Connection: \(label)")
-        .accessibilityIdentifier("route-pill")
     }
 }
 
@@ -280,12 +283,14 @@ struct BannerSection: View {
     }
 }
 
-/// The frame every screen shares: the system large title, the route pill in
-/// the top trailing toolbar, and either a full-screen state or the content.
-/// Each screen sits in its own NavigationStack (see RootView).
-struct ScreenChrome<Content: View, Trailing: View>: View {
+/// The frame every screen shares: the custom header row (large title and the
+/// route pill), an optional action row, and either a full-screen state or the
+/// content. Each screen sits in its own NavigationStack (see RootView). The
+/// system navigation bar stays hidden on the screen roots, so nothing the
+/// system draws can clip the pill.
+struct ScreenChrome<Content: View, Actions: View>: View {
     let screen: Screen
-    private let trailing: Trailing
+    private let actions: Actions
     private let content: Content
 
     @EnvironmentObject private var model: AppModel
@@ -294,10 +299,10 @@ struct ScreenChrome<Content: View, Trailing: View>: View {
     /// The content is a List, a Form or its own layout. It scrolls, refreshes
     /// and shows its banners itself.
     init(screen: Screen,
-         @ViewBuilder trailing: () -> Trailing,
+         @ViewBuilder actions: () -> Actions,
          @ViewBuilder content: () -> Content) {
         self.screen = screen
-        self.trailing = trailing()
+        self.actions = actions()
         self.content = content()
     }
 
@@ -312,20 +317,35 @@ struct ScreenChrome<Content: View, Trailing: View>: View {
         }
     }
 
+    /// The canvas behind the header and the content.
+    private var canvas: Color {
+        screen == .console ? Theme.chatBackground : Theme.page
+    }
+
     var body: some View {
-        chromeBody
-            .navigationTitle(screen.title)
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    trailing
-                    RoutePill()
+        VStack(spacing: 0) {
+            ScreenHeader(title: screen.title)
+            actions
+            chromeBody
+        }
+        .background(canvas.ignoresSafeArea())
+        .navigationTitle(screen.title)
+        .navigationBarTitleDisplayMode(.inline)
+        // The phone hides the bar. On iPad the bar stays for the sidebar button
+        // and shows no title of its own.
+        .toolbar(HeaderMetrics.isPad ? .visible : .hidden, for: .navigationBar)
+        .toolbar {
+            if HeaderMetrics.isPad {
+                ToolbarItem(placement: .principal) {
+                    Text("").accessibilityHidden(true)
                 }
             }
-            // A container with its own identifier. A bare identifier on a plain
-            // stack would replace the identifiers of everything inside it.
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier(screen.identifier)
+        }
+        .scrollsToTopOnTabTap(screen)
+        // A container with its own identifier. A bare identifier on a plain
+        // stack would replace the identifiers of everything inside it.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(screen.identifier)
     }
 
     @ViewBuilder
@@ -340,7 +360,7 @@ struct ScreenChrome<Content: View, Trailing: View>: View {
                 .frame(maxWidth: .infinity)
             }
             .scrollDismissesKeyboard(.interactively)
-            .background(Theme.page.ignoresSafeArea())
+            .background(canvas.ignoresSafeArea())
         } else {
             content
         }
@@ -390,8 +410,8 @@ struct ScreenChrome<Content: View, Trailing: View>: View {
     }
 }
 
-extension ScreenChrome where Trailing == EmptyView {
+extension ScreenChrome where Actions == EmptyView {
     init(screen: Screen, @ViewBuilder content: () -> Content) {
-        self.init(screen: screen, trailing: { EmptyView() }, content: content)
+        self.init(screen: screen, actions: { EmptyView() }, content: content)
     }
 }

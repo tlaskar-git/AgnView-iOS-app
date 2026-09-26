@@ -33,15 +33,19 @@ Use this list to test the TestFlight build on a real iPhone against the AgnView 
    - [ ] Codex replies.
    - [ ] AntiGravity replies.
 8. In the Console composer, check the controls.
-   - [ ] The agent chips, **Model**, **Effort**, the paperclip and **Send** show in one card.
-   - [ ] The prompt field grows to four lines.
-   - [ ] Tap the prompt field. The keyboard bar shows **Model** and **Effort** on the left and **Done** on the right. Nothing sits over **Send**.
+   - [ ] The chips **Agent**, **Model** and **Effort**, the plus button, the prompt field and **Send** show in one floating card.
+   - [ ] Open the **Agent** menu. It lists Claude Code, Codex, AntiGravity, DeepSeek in that order, and the order stays the same when you pick another agent.
+   - [ ] The prompt field grows to five lines. **Return** adds a new line.
+   - [ ] Tap the prompt field. The keyboard has no bar and no **Done** button. The tab bar hides and nothing sits over **Send**.
+   - [ ] Scroll the chat down, tap the chat, or swipe down. The keyboard closes.
+   - [ ] Your prompts show as right-aligned bubbles. Agent replies show as plain serif text with a coloured agent label. A code block shows a language label and **Copy**.
+   - [ ] While an agent is answering, a small pulsing dot shows at the end of its last reply.
    - [ ] **Model** and **Effort** list the choices for the agent you picked. Send a prompt with a model and an effort chosen. The agent replies.
    - [ ] Tap the paperclip. **From this computer** lists files on the PC. Tick one and tap **Attach**. Send the prompt. The agent gets the file name.
    - [ ] **From Files, iCloud or OneDrive** and **From Photos** show greyed out with "Needs AgnView 0.1.13 on your computer".
 9. Open **Sessions**, **Pipelines** and **Usage**.
    - [ ] Each screen loads.
-   - [ ] Sessions: tap **Refresh**, and pull the list down. Both read the hub again and the line reads "Updated just now".
+   - [ ] Sessions: tap **Refresh** under the title, and pull the list down. Both read the hub again and the line reads "Updated just now".
    - [ ] Usage shows cards only for the providers the hub reports. Each card shows its windows with a bar, the time to reset and the breakdown rows.
    - [ ] "Not measured yet" shows only on a window the hub gave no figure for.
    - [ ] Usage: tap **Refresh**. The hub reads every provider again and the cards update.
@@ -50,6 +54,9 @@ Use this list to test the TestFlight build on a real iPhone against the AgnView 
    - [ ] Make two tasks wait for each other. The sheet names the tasks and does not create the pipeline.
    - [ ] The three dots on a pipeline offer **Request revision**, **Mark failed** and **Delete pipeline**.
 10. Open **Settings**.
+   - [ ] The tab bar floats at the bottom in the order Sessions, Pipelines, Console, Usage, Settings. Console is the raised button in the centre. The app opens on Console. Tap the tab of the screen you are on: the list scrolls to the top.
+   - [ ] Every screen shows the connection pill at the top right, under the battery. It reads LAN, Direct, Relay or Offline in full.
+   - [ ] Paired machines: the active machine says **Active** and the other has a **Switch** button. Tap **Switch**. The app switches at once and the pill updates. Tap the row to open its details.
    - [ ] The version reads like "Version 1.0.1", with no build number.
    - [ ] The Console status line reads "<machine name> is healthy" and the route pill shows **LAN**.
 

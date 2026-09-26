@@ -125,7 +125,8 @@ final class AgnViewE2ETests: XCTestCase {
             XCTAssertNotNil(row, "sidebar item \(name) missing")
             row?.tap()
         } else {
-            let tab = app.tabBars.buttons[name]
+            // The floating tab bar draws its own buttons: tab-sessions, tab-console and so on.
+            let tab = app.buttons["tab-" + name.lowercased()]
             XCTAssertTrue(tab.waitForExistence(timeout: 20), "tab \(name) missing")
             tab.tap()
         }
@@ -153,6 +154,12 @@ final class AgnViewE2ETests: XCTestCase {
             let notice = element("composer-notice").exists ? element("composer-notice").label : "none"
             XCTFail("composer never became enabled. route: \(pill). status: \(status). notice: \(notice)")
         }
+    }
+
+    /// There is no Done button: a tap on the chat closes the keyboard.
+    private func closeKeyboardByTappingChat() {
+        guard app.keyboards.firstMatch.exists else { return }
+        element("console-log").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
     }
 
     private func typePrompt(_ text: String) {
@@ -195,21 +202,21 @@ final class AgnViewE2ETests: XCTestCase {
         need("composer-result", timeout: 40)
         XCTAssertTrue(element("composer-result").label.contains("Agent:"))
         let fieldValue = (element("composer-prompt").value as? String) ?? ""
-        XCTAssertTrue(fieldValue.isEmpty || fieldValue == "Prompt",
+        XCTAssertTrue(fieldValue.isEmpty || fieldValue.hasPrefix("Message "),
                       "the field was not cleared after a successful send")
         snap("console-after-send")
 
-        // The keyboard must close with Done.
+        // The keyboard has no Done button. Tapping the chat closes it.
         let prompt = element("composer-prompt")
         prompt.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "the keyboard never appeared")
-        let done = element("keyboard-done")
-        XCTAssertTrue(done.waitForExistence(timeout: 10), "the keyboard has no Done button")
+        XCTAssertFalse(element("keyboard-done").exists, "the keyboard has a Done button")
         snap("keyboard-open")
-        done.tap()
+        closeKeyboardByTappingChat()
         let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
                                                object: app.keyboards.firstMatch)
-        XCTAssertEqual(XCTWaiter().wait(for: [closed], timeout: 10), .completed, "the keyboard stayed open after Done")
+        XCTAssertEqual(XCTWaiter().wait(for: [closed], timeout: 10), .completed,
+                       "the keyboard stayed open after a tap on the chat")
         snap("keyboard-dismissed")
 
         for name in ["Sessions", "Pipelines", "Usage", "Settings", "Console"] {
@@ -268,8 +275,7 @@ final class AgnViewE2ETests: XCTestCase {
         need("composer-result", timeout: 40)
         XCTAssertTrue(element("composer-result").label.contains("Agent: Codex"))
         // Close the keyboard so the console log has room to show its rows.
-        let done = element("keyboard-done")
-        if done.waitForExistence(timeout: 5) { done.tap() }
+        closeKeyboardByTappingChat()
         let row = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == 'console-row' AND label CONTAINS 'reasoning_effort=low'"))
             .firstMatch
@@ -396,8 +402,7 @@ final class AgnViewE2ETests: XCTestCase {
         sendPromptAndSeeReply("still works with a failed usage panel")
         snap("console-send-with-usage-error")
 
-        let done = element("keyboard-done")
-        if done.exists { done.tap() }
+        closeKeyboardByTappingChat()
         open("Usage")
         need("usage-error")
     }

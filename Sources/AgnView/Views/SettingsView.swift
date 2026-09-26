@@ -5,6 +5,7 @@ struct SettingsView: View {
     @EnvironmentObject private var nav: NavState
     @AppStorage(AppearanceChoice.storageKey) private var appearance = AppearanceChoice.system.rawValue
     @State private var pendingRemoval: HubRecord?
+    @State private var opened: OpenedMachine?
 
     private var showDialog: Binding<Bool> {
         Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } })
@@ -21,6 +22,9 @@ struct SettingsView: View {
                 appearanceSection
                 aboutSection
                 unpairSection
+            }
+            .navigationDestination(item: $opened) { machine in
+                MachineDetailView(hubId: machine.id)
             }
         }
         .confirmationDialog("Remove this machine?",
@@ -39,21 +43,18 @@ struct SettingsView: View {
     // MARK: Sections
 
     private var machinesSection: some View {
-        Section("Paired machines") {
+        Section {
             if model.hubs.isEmpty {
                 Text("No machine paired yet.")
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("machines-empty")
             }
             ForEach(model.hubs) { hub in
-                NavigationLink {
-                    MachineDetailView(hub: hub)
-                } label: {
-                    MachineRowLabel(hub: hub,
-                                    isActive: hub.id == model.activeHub?.id,
-                                    routeLabel: model.route.label)
-                }
-                .accessibilityIdentifier("machine-row")
+                MachineRow(hub: hub,
+                           isActive: hub.id == model.activeHub?.id,
+                           routeLabel: model.route.label,
+                           onOpen: { opened = OpenedMachine(id: hub.id) },
+                           onSwitch: { switchTo(hub) })
             }
             Button {
                 nav.showPairing = true
@@ -62,7 +63,21 @@ struct SettingsView: View {
                     .frame(minHeight: Theme.minTap, alignment: .leading)
             }
             .accessibilityIdentifier("add-machine")
+        } header: {
+            Text("Paired machines")
+        } footer: {
+            if !model.hubs.isEmpty {
+                Text("Tap Switch to change the active machine. Tap a row for details.")
+            }
         }
+    }
+
+    /// Switches at once, with a haptic and a toast. The route pill follows the
+    /// new machine as soon as the connection settles.
+    private func switchTo(_ hub: HubRecord) {
+        model.switchTo(hub.id)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        nav.showToast("Switched to " + hub.name)
     }
 
     private var connectionSection: some View {
@@ -165,78 +180,6 @@ enum AppVersion {
         guard let text = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty else { return nil }
         return text
-    }
-}
-
-/// The name of a machine and whether it is the active one, as a list row.
-struct MachineRowLabel: View {
-    let hub: HubRecord
-    let isActive: Bool
-    let routeLabel: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(hub.name)
-                .foregroundStyle(.primary)
-            if isActive {
-                Text("Active, " + routeLabel)
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.success)
-            }
-        }
-        .frame(minHeight: Theme.minTap, alignment: .leading)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// One machine: switch to it or remove it from this phone.
-struct MachineDetailView: View {
-    let hub: HubRecord
-
-    @EnvironmentObject private var model: AppModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var confirmRemoval = false
-
-    private var isActive: Bool { hub.id == model.activeHub?.id }
-
-    var body: some View {
-        Form {
-            Section {
-                LabeledContent("Name", value: hub.name)
-                LabeledContent("Status", value: isActive ? "Active, " + model.route.label : "Paired")
-            }
-            Section {
-                if !isActive {
-                    Button {
-                        model.switchTo(hub.id)
-                    } label: {
-                        Text("Switch to this machine")
-                            .frame(minHeight: Theme.minTap, alignment: .leading)
-                    }
-                    .accessibilityIdentifier("machine-switch")
-                }
-                Button(role: .destructive) {
-                    confirmRemoval = true
-                } label: {
-                    Text("Remove from this phone")
-                        .frame(minHeight: Theme.minTap, alignment: .leading)
-                }
-                .accessibilityIdentifier("machine-remove")
-            }
-        }
-        .navigationTitle(hub.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog("Remove this machine?", isPresented: $confirmRemoval,
-                            titleVisibility: .visible) {
-            Button("Remove from this phone", role: .destructive) {
-                model.remove(hub.id)
-                dismiss()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(UserMessages.removedFromPhone)
-        }
-        .accessibilityIdentifier("machine-detail")
     }
 }
 
