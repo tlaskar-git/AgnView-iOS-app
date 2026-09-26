@@ -189,26 +189,6 @@ enum Keyboard {
     }
 }
 
-/// Runs a screen inside a navigation stack on iPhone. On iPad the split view
-/// already provides one.
-struct AdaptiveStack<Content: View>: View {
-    private let content: Content
-
-    init(@ViewBuilder _ content: () -> Content) {
-        self.content = content()
-    }
-
-    var body: some View {
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            content.navigationBarTitleDisplayMode(.inline)
-        } else {
-            NavigationStack {
-                content.toolbar(.hidden, for: .navigationBar)
-            }
-        }
-    }
-}
-
 /// Adds pull to refresh when there is an action for it.
 struct OptionalRefresh: ViewModifier {
     let action: (() async -> Void)?
@@ -287,61 +267,60 @@ struct ScreenChrome<Content: View>: View {
     }
 
     var body: some View {
-        AdaptiveStack {
-            VStack(alignment: .leading, spacing: Theme.spacing) {
-                header
-                if let reason = model.lanUnavailableReason {
-                    switch reason {
-                    case .pairedWithoutLAN:
-                        VStack(alignment: .leading, spacing: 8) {
-                            Banner(kind: .warning, text: UserMessages.pairedWithoutLANBanner,
-                                   identifier: "banner-relay-only")
-                            Button("Scan the QR code again") { nav.showPairing = true }
-                                .frame(minHeight: Theme.minTap)
-                                .accessibilityIdentifier("banner-scan-again")
-                        }
-                    case .notOnSameNetwork:
-                        Banner(kind: .warning, text: UserMessages.notOnSameNetworkBanner,
-                               identifier: "banner-not-on-network")
-                    }
-                }
-                if let notice = model.notice {
-                    HStack(alignment: .top) {
-                        Banner(kind: .info, text: notice, identifier: "banner-notice")
-                        Button("Dismiss") { model.notice = nil }
-                            .frame(minHeight: Theme.minTap)
-                            .accessibilityIdentifier("banner-notice-dismiss")
-                    }
-                }
-                if gate != .none {
-                    ScrollView { gateView }
-                        .scrollDismissesKeyboard(.interactively)
-                } else if scrolls {
-                    ScrollView {
-                        content.frame(maxWidth: .infinity, alignment: .leading)
-                    }
+        VStack(alignment: .leading, spacing: Theme.spacing) {
+            banners
+            if gate != .none {
+                ScrollView { gateView }
                     .scrollDismissesKeyboard(.interactively)
-                    .modifier(OptionalRefresh(action: onRefresh))
-                } else {
-                    content.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if scrolls {
+                ScrollView {
+                    content.frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .scrollDismissesKeyboard(.interactively)
+                .modifier(OptionalRefresh(action: onRefresh))
+            } else {
+                content.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .padding(.horizontal, Theme.screenPadding)
-            .padding(.top, 8)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .background(Theme.page.ignoresSafeArea())
         }
+        .padding(.horizontal, Theme.screenPadding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Theme.page.ignoresSafeArea())
+        // The screen sits in its own NavigationStack (see RootView), so the
+        // title is the system large title and the route pill is a toolbar item.
+        .navigationTitle(screen.title)
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                RoutePill()
+            }
+        }
+        .accessibilityIdentifier(screen.identifier)
     }
 
-    private var header: some View {
-        HStack {
-            Text(screen.title)
-                .font(.largeTitle.bold())
-                .foregroundStyle(Theme.textMain)
-                .accessibilityAddTraits(.isHeader)
-                .accessibilityIdentifier(screen.identifier)
-            Spacer()
-            RoutePill()
+    @ViewBuilder
+    private var banners: some View {
+        if let reason = model.lanUnavailableReason {
+            switch reason {
+            case .pairedWithoutLAN:
+                VStack(alignment: .leading, spacing: 8) {
+                    Banner(kind: .warning, text: UserMessages.pairedWithoutLANBanner,
+                           identifier: "banner-relay-only")
+                    Button("Scan the QR code again") { nav.showPairing = true }
+                        .frame(minHeight: Theme.minTap)
+                        .accessibilityIdentifier("banner-scan-again")
+                }
+            case .notOnSameNetwork:
+                Banner(kind: .warning, text: UserMessages.notOnSameNetworkBanner,
+                       identifier: "banner-not-on-network")
+            }
+        }
+        if let notice = model.notice {
+            HStack(alignment: .top) {
+                Banner(kind: .info, text: notice, identifier: "banner-notice")
+                Button("Dismiss") { model.notice = nil }
+                    .frame(minHeight: Theme.minTap)
+                    .accessibilityIdentifier("banner-notice-dismiss")
+            }
         }
     }
 
