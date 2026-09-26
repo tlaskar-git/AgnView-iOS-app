@@ -369,6 +369,602 @@ class Api:
             raise AscError(status, parse_errors(payload), method, "upload")
 
 
+# ------------------------------------------------------------ listing -------
+
+LISTING_KEYS = (
+    "locale", "name", "subtitle", "promotionalText", "description", "keywords",
+    "whatsNew", "supportUrl", "marketingUrl", "privacyPolicyUrl", "copyright",
+    "primaryCategory", "secondaryCategory", "contentRightsDeclaration",
+    "ageRating", "reviewNotes", "reviewDemoRequired",
+)
+LIMITS = {
+    "name": 30,
+    "subtitle": 30,
+    "promotionalText": 170,
+    "keywords": 100,
+    "description": 4000,
+    "whatsNew": 4000,
+    "reviewNotes": 4000,
+}
+URL_KEYS = ("supportUrl", "marketingUrl", "privacyPolicyUrl")
+URL_LIMIT = 255
+CONTENT_RIGHTS = ("DOES_NOT_USE_THIRD_PARTY_CONTENT", "USES_THIRD_PARTY_CONTENT")
+LOCALE_RE = re.compile(r"^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
+CATEGORY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+ATTR_NAME_RE = re.compile(r"^[a-z][A-Za-z0-9]*$")
+
+
+def validate_listing(doc):
+    """Return a list of problems. An empty list means the listing is valid."""
+    if not isinstance(doc, dict):
+        return ["the listing must be a JSON object"]
+    problems = []
+    for key in LISTING_KEYS:
+        if key not in doc:
+            problems.append("%s: key is missing" % key)
+    for key, limit in LIMITS.items():
+        value = doc.get(key)
+        if value is None or key not in doc:
+            continue
+        if not isinstance(value, str):
+            problems.append("%s: must be a string" % key)
+        elif len(value) > limit:
+            problems.append("%s: %d characters, the limit is %d" % (key, len(value), limit))
+    for key in URL_KEYS:
+        value = doc.get(key)
+        if value in (None, "") or key not in doc:
+            continue
+        if not isinstance(value, str) or not re.match(r"^https?://[^\s/]+\S*$", value):
+            problems.append("%s: must be an http or https URL" % key)
+        elif len(value) > URL_LIMIT:
+            problems.append("%s: %d characters, the limit is %d" % (key, len(value), URL_LIMIT))
+    locale = doc.get("locale")
+    if "locale" in doc and (not isinstance(locale, str) or not LOCALE_RE.match(locale)):
+        problems.append("locale: must look like en-US")
+    if "copyright" in doc and doc["copyright"] is not None and not isinstance(doc["copyright"], str):
+        problems.append("copyright: must be a string")
+    for key in ("primaryCategory", "secondaryCategory"):
+        value = doc.get(key)
+        if key in doc and value not in (None, "") and (
+                not isinstance(value, str) or not CATEGORY_RE.match(value)):
+            problems.append("%s: must be an App Store category id such as DEVELOPER_TOOLS" % key)
+    rights = doc.get("contentRightsDeclaration")
+    if "contentRightsDeclaration" in doc and rights not in (None, "") and rights not in CONTENT_RIGHTS:
+        problems.append("contentRightsDeclaration: must be one of %s" % ", ".join(CONTENT_RIGHTS))
+    age = doc.get("ageRating")
+    if "ageRating" in doc:
+        if not isinstance(age, dict):
+            problems.append("ageRating: must be an object")
+        else:
+            for name, value in age.items():
+                if not ATTR_NAME_RE.match(str(name)):
+                    problems.append("ageRating: an attribute name is not valid")
+                elif not (value is None or isinstance(value, (bool, str))):
+                    problems.append("ageRating.%s: must be a string, a boolean or null" % name)
+    if "reviewDemoRequired" in doc and not isinstance(doc["reviewDemoRequired"], bool):
+        problems.append("reviewDemoRequired: must be true or false")
+    return problems
+
+
+def load_listing(path):
+    """Return (listing, problems). listing is None when the file is absent or unreadable."""
+    if not path or not os.path.isfile(path):
+        return None, []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as exc:
+        return None, ["the listing file is not valid JSON (%s)" % type(exc).__name__]
+    return doc, validate_listing(doc)
+
+
+# --------------------------------------------------------- API data layer ---
+
+EDITABLE_STATES = (
+    "PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED",
+    "INVALID_BINARY",
+)
+IPHONE_TYPES = ("APP_IPHONE_69", "APP_IPHONE_67", "APP_IPHONE_65")
+IPAD_TYPES = ("APP_IPAD_PRO_3GEN_129", "APP_IPAD_PRO_129")
+SCREENSHOT_MIN, SCREENSHOT_MAX = 1, 10
+# Age rating attributes that are legitimately empty on a finished declaration.
+AGE_OPTIONAL = frozenset((
+    "kidsAgeBand", "ageRatingOverride", "ageRatingOverrideV2", "koreaAgeRatingOverride",
+    "gracRatingClassificationNumber", "developerAgeRatingInfoUrl", "seventeenPlus",
+    "socialMedia", "socialMediaAgeRestricted",
+))
+
+
+class AuthError(Exception):
+    """The API rejected the credentials."""
+
+
+def attrs(resource):
+    return (resource or {}).get("attributes") or {}
+
+
+def rel_id(resource, name):
+    data = (((resource or {}).get("relationships") or {}).get(name) or {}).get("data")
+    return data.get("id") if isinstance(data, dict) else None
+
+
+def version_state(version):
+    a = attrs(version)
+    return a.get("appVersionState") or a.get("appStoreState") or ""
+
+
+def info_state(info):
+    a = attrs(info)
+    return a.get("state") or a.get("appStoreState") or ""
+
+
+def try_get(api, path, params=None):
+    """GET one resource. Returns its data, or None when Apple answers 404."""
+    try:
+        return api.get(path, params).get("data")
+    except AscError as err:
+        if err.status == 404:
+            return None
+        raise
+
+
+def find_app(api, bundle_id):
+    data, _ = api.get_all("/v1/apps", {"filter[bundleId]": bundle_id, "limit": "5"})
+    return data[0] if data else None
+
+
+def list_versions(api, app_id):
+    data, _ = api.get_all("/v1/apps/%s/appStoreVersions" % app_id,
+                          {"filter[platform]": "IOS", "limit": "50"})
+    return data
+
+
+def pick_editable(versions):
+    editable = [v for v in versions if version_state(v) in EDITABLE_STATES]
+    for v in editable:
+        if version_state(v) == "PREPARE_FOR_SUBMISSION":
+            return v
+    return editable[0] if editable else None
+
+
+def attached_build(api, version_id):
+    """Return (build, marketing version string) for the build on a version."""
+    doc = api.get("/v1/appStoreVersions/%s/build" % version_id, {"include": "preReleaseVersion"})
+    build = doc.get("data")
+    if not build:
+        return None, None
+    pre = None
+    for item in doc.get("included") or []:
+        if item.get("type") == "preReleaseVersions":
+            pre = attrs(item).get("version")
+    return build, pre
+
+
+def build_number_key(build):
+    try:
+        return int(attrs(build).get("version") or 0)
+    except ValueError:
+        return 0
+
+
+def list_builds(api, app_id, version_string):
+    data, _ = api.get_all("/v1/builds", {
+        "filter[app]": app_id,
+        "filter[preReleaseVersion.version]": version_string,
+        "sort": "-uploadedDate",
+        "limit": "200",
+    })
+    return data
+
+
+def newest_valid_build(builds):
+    valid = [b for b in builds
+             if attrs(b).get("processingState") == "VALID" and not attrs(b).get("expired")]
+    valid.sort(key=lambda b: (attrs(b).get("uploadedDate") or "", build_number_key(b)), reverse=True)
+    return valid[0] if valid else None
+
+
+def pick_app_info(api, app_id):
+    data, _ = api.get_all("/v1/apps/%s/appInfos" % app_id,
+                          {"include": "primaryCategory,secondaryCategory", "limit": "10"})
+    for info in data:
+        if info_state(info) in EDITABLE_STATES:
+            return info
+    return data[0] if data else None
+
+
+def version_localisations(api, version_id):
+    data, _ = api.get_all("/v1/appStoreVersions/%s/appStoreVersionLocalizations" % version_id,
+                          {"limit": "200"})
+    return data
+
+
+def info_localisations(api, info_id):
+    data, _ = api.get_all("/v1/appInfos/%s/appInfoLocalizations" % info_id, {"limit": "200"})
+    return data
+
+
+def age_declaration(api, info_id):
+    return try_get(api, "/v1/appInfos/%s/ageRatingDeclaration" % info_id)
+
+
+def review_detail(api, version_id):
+    return try_get(api, "/v1/appStoreVersions/%s/appStoreReviewDetail" % version_id)
+
+
+def screenshot_sets(api, loc_id):
+    data, _ = api.get_all("/v1/appStoreVersionLocalizations/%s/appScreenshotSets" % loc_id,
+                          {"limit": "50"})
+    return data
+
+
+def screenshots_in_set(api, set_id):
+    data, _ = api.get_all("/v1/appScreenshotSets/%s/appScreenshots" % set_id, {"limit": "50"})
+    return data
+
+
+def delivery_state(shot):
+    state = attrs(shot).get("assetDeliveryState")
+    return state.get("state") if isinstance(state, dict) else None
+
+
+def price_schedule(api, app_id):
+    return try_get(api, "/v1/apps/%s/appPriceSchedule" % app_id)
+
+
+def manual_prices(api, schedule_id):
+    return api.get_all("/v1/appPriceSchedules/%s/manualPrices" % schedule_id,
+                       {"include": "appPricePoint", "limit": "200"})
+
+
+def app_availability(api, app_id):
+    return try_get(api, "/v1/apps/%s/appAvailabilityV2" % app_id)
+
+
+def available_territories(api, availability_id):
+    data, _ = api.get_all("/v2/appAvailabilities/%s/territoryAvailabilities" % availability_id,
+                          {"limit": "200"})
+    return sum(1 for x in data if attrs(x).get("available"))
+
+
+def is_zero(value):
+    try:
+        return float(value) == 0.0
+    except (TypeError, ValueError):
+        return False
+
+
+# ----------------------------------------------------------------- check ----
+
+class Checker:
+    """Read-only report. Each read is guarded: a failed read prints INFO and the run continues."""
+
+    def __init__(self, api, out, bundle_id, listing):
+        self.api = api
+        self.out = out
+        self.bundle_id = bundle_id
+        self.listing = listing
+        self.missing = 0
+        self.read_ok = True
+
+    # -- reporting helpers
+    def ok(self, item, text=""):
+        self.out.line("PASS", item, text)
+
+    def miss(self, item, text):
+        self.missing += 1
+        self.out.line("MISSING", item, text)
+
+    def info(self, item, text):
+        self.out.line("INFO", item, text)
+
+    def text_field(self, item, value, limit, required, hint):
+        n = len(value) if isinstance(value, str) else 0
+        if n == 0:
+            if required:
+                self.miss(item, hint)
+            else:
+                self.info(item, "not set (optional)")
+        elif n > limit:
+            self.miss(item, "%d characters, the limit is %d" % (n, limit))
+        else:
+            self.ok(item, "%d/%d characters" % (n, limit))
+
+    def guarded(self, item, fn):
+        """Run one read. Failure prints INFO and sets read_ok False. 401 stops the run."""
+        self.read_ok = True
+        try:
+            return fn()
+        except AscError as err:
+            if err.status == 401:
+                raise AuthError("the API rejected the credentials (HTTP 401)") from None
+            self.read_ok = False
+            self.info(item, "could not be read: %s" % err.describe())
+            return None
+
+    # -- the run
+    def run(self):
+        try:
+            app = find_app(self.api, self.bundle_id)
+        except AscError as err:
+            if err.status in (401, 403):
+                raise AuthError("the API rejected the credentials or the key role (HTTP %d)" % err.status) from None
+            raise
+        if app is None:
+            self.miss("app record", "no app has this bundle id: create it in App Store Connect, Apps, New App")
+            self.manual_lines()
+            return self.finish()
+        self.ok("app record", "found by bundle id")
+        app_id = app["id"]
+        mask_for_ci(app_id, self.out)
+        rights = attrs(app).get("contentRightsDeclaration")
+        if rights:
+            self.ok("content rights declaration", rights)
+        else:
+            self.miss("content rights declaration", "not set: run apply, or answer Content Rights in App Information")
+        versions = self.guarded("app store versions", lambda: list_versions(self.api, app_id))
+        if versions is not None:
+            version = pick_editable(versions)
+            if version is None:
+                states = sorted({version_state(v) or "UNKNOWN" for v in versions})
+                self.miss("editable version", "no version can be edited (states: %s): create a new version in App Store Connect"
+                          % (", ".join(states) or "none"))
+            else:
+                self.ok("editable version", "%s, state %s" % (attrs(version).get("versionString"), version_state(version)))
+                self.check_version(app_id, version)
+        self.check_app_info(app_id)
+        self.check_price(app_id)
+        self.check_availability(app_id)
+        self.manual_lines()
+        return self.finish()
+
+    def check_version(self, app_id, version):
+        vid = version["id"]
+        vstring = attrs(version).get("versionString") or ""
+        if attrs(version).get("copyright"):
+            self.ok("copyright", "set")
+        else:
+            self.miss("copyright", "not set: run apply, or enter it on the version page")
+        self.check_build(app_id, vid, vstring)
+        locs = self.guarded("version localisations", lambda: version_localisations(self.api, vid))
+        if locs is not None:
+            self.check_version_localisations(locs)
+            self.check_screenshots(locs)
+        self.check_review(vid)
+
+    def check_build(self, app_id, vid, vstring):
+        attached = self.guarded("build attached", lambda: attached_build(self.api, vid))
+        attached_ok = self.read_ok
+        builds = self.guarded("builds", lambda: list_builds(self.api, app_id, vstring))
+        newest = newest_valid_build(builds) if builds is not None else None
+        if attached_ok:
+            build, pre = attached
+            if build is None:
+                self.miss("build attached", "no build is attached: run apply, or choose one on the version page")
+            else:
+                a = attrs(build)
+                state = a.get("processingState") or "UNKNOWN"
+                number = a.get("version") or "?"
+                if pre is not None and pre != vstring:
+                    self.miss("build attached", "the attached build is for version %s but the editable version is %s: run apply" % (pre, vstring))
+                elif state != "VALID":
+                    self.miss("build attached", "build %s is attached but its processing state is %s" % (number, state))
+                else:
+                    self.ok("build attached", "build %s, version %s, processing %s" % (number, pre or vstring, state))
+                if a.get("usesNonExemptEncryption") is None:
+                    self.info("build export compliance", "build %s has no export compliance answer yet" % number)
+                if newest is not None and newest["id"] != build["id"]:
+                    self.info("newest build", "build %s is newer and valid, the attached build is %s"
+                              % (attrs(newest).get("version"), number))
+        if builds is not None:
+            if newest is not None:
+                self.ok("newest processed build", "build %s matches version %s" % (attrs(newest).get("version"), vstring))
+            else:
+                pending = sum(1 for b in builds if attrs(b).get("processingState") == "PROCESSING")
+                self.miss("newest processed build",
+                          "no valid build for version %s (%d processing, %d other): upload one with the release workflow and wait for processing"
+                          % (vstring, pending, len(builds) - pending))
+
+    def wanted_locales(self, locs):
+        by_locale = {attrs(l).get("locale"): l for l in locs}
+        if self.listing and self.listing.get("locale"):
+            return [self.listing["locale"]], by_locale
+        return sorted(k for k in by_locale if k), by_locale
+
+    def check_version_localisations(self, locs):
+        wanted, by_locale = self.wanted_locales(locs)
+        if not wanted:
+            self.miss("version localisation", "none exists: run apply")
+            return
+        for locale in wanted:
+            loc = by_locale.get(locale)
+            prefix = "version localisation %s " % locale
+            if loc is None:
+                self.miss(prefix.strip(), "does not exist: run apply")
+                continue
+            a = attrs(loc)
+            self.text_field(prefix + "description", a.get("description"), LIMITS["description"], True, "empty: run apply")
+            self.text_field(prefix + "keywords", a.get("keywords"), LIMITS["keywords"], True, "empty: run apply")
+            self.text_field(prefix + "promotional text", a.get("promotionalText"), LIMITS["promotionalText"], False, "")
+            self.text_field(prefix + "what's new", a.get("whatsNew"), LIMITS["whatsNew"], False, "")
+            for field, label, required in (("supportUrl", "support URL", True), ("marketingUrl", "marketing URL", False)):
+                if a.get(field):
+                    self.ok(prefix + label, "present")
+                elif required:
+                    self.miss(prefix + label, "empty: run apply")
+                else:
+                    self.info(prefix + label, "not set (optional)")
+
+    def check_screenshots(self, locs):
+        wanted, by_locale = self.wanted_locales(locs)
+        if not wanted:
+            self.miss("screenshots", "no localisation to hold them: run apply first")
+            return
+        for locale in wanted:
+            loc = by_locale.get(locale)
+            if loc is None:
+                self.miss("screenshots %s" % locale, "no localisation to hold them: run apply first")
+                continue
+            sets = self.guarded("screenshot sets %s" % locale, lambda: screenshot_sets(self.api, loc["id"]))
+            if sets is None:
+                continue
+            counts, pending = {}, {}
+            for s in sets:
+                stype = attrs(s).get("screenshotDisplayType") or "UNKNOWN"
+                shots = self.guarded("screenshots %s" % stype, lambda s=s: screenshots_in_set(self.api, s["id"]))
+                if shots is None:
+                    continue
+                counts[stype] = len(shots)
+                pending[stype] = sum(1 for x in shots if delivery_state(x) not in (None, "COMPLETE"))
+                self.info("screenshots %s %s" % (locale, stype), "%d uploaded" % len(shots))
+            for label, types in (("iPhone 6.9 inch", IPHONE_TYPES), ("iPad 13 inch", IPAD_TYPES)):
+                item = "screenshots %s %s" % (locale, label)
+                present = [(tp, counts[tp]) for tp in types if counts.get(tp)]
+                if not present:
+                    self.miss(item, "none uploaded (expected in %s): run apply with --screenshots-dir" % types[0])
+                    continue
+                stype, n = present[0]
+                if n > SCREENSHOT_MAX:
+                    self.miss(item, "%d screenshots in %s, the maximum is %d" % (n, stype, SCREENSHOT_MAX))
+                elif pending.get(stype):
+                    self.miss(item, "%d of %d screenshots in %s are not COMPLETE yet" % (pending[stype], n, stype))
+                else:
+                    self.ok(item, "%d in %s (allowed %d to %d)" % (n, stype, SCREENSHOT_MIN, SCREENSHOT_MAX))
+
+    def check_review(self, vid):
+        detail = self.guarded("app review details", lambda: review_detail(self.api, vid))
+        if detail is None:
+            if self.read_ok:
+                self.miss("app review details", "not created: run apply")
+            return
+        a = attrs(detail)
+        if a.get("notes"):
+            self.ok("app review notes", "%d characters" % len(a["notes"]))
+        else:
+            self.miss("app review notes", "empty: run apply")
+        for field, label, secret in (
+                ("contactFirstName", "first name", "REVIEW_CONTACT_FIRST_NAME"),
+                ("contactLastName", "last name", "REVIEW_CONTACT_LAST_NAME"),
+                ("contactPhone", "phone", "REVIEW_CONTACT_PHONE"),
+                ("contactEmail", "email", "REVIEW_CONTACT_EMAIL")):
+            if a.get(field):
+                self.ok("app review contact %s" % label, "present")
+            else:
+                self.miss("app review contact %s" % label,
+                          "empty: add the %s secret and run apply, or enter it in App Store Connect" % secret)
+        required = a.get("demoAccountRequired")
+        if required is None:
+            self.miss("app review demo account flag", "not set: run apply")
+        elif required:
+            if a.get("demoAccountName") and a.get("demoAccountPassword"):
+                self.ok("app review demo account", "required and present")
+            else:
+                self.miss("app review demo account", "required but the name or password is empty: enter them in App Store Connect")
+        else:
+            self.ok("app review demo account flag", "not required")
+
+    def check_app_info(self, app_id):
+        info = self.guarded("app info", lambda: pick_app_info(self.api, app_id))
+        if info is None:
+            if self.read_ok:
+                self.miss("app info", "no app info record was found")
+            return
+        iid = info["id"]
+        primary, secondary = rel_id(info, "primaryCategory"), rel_id(info, "secondaryCategory")
+        if primary:
+            self.ok("primary category", primary)
+        else:
+            self.miss("primary category", "not set: run apply, or choose it in App Information")
+        if secondary:
+            self.ok("secondary category", secondary)
+        else:
+            self.info("secondary category", "not set (optional)")
+        locs = self.guarded("app info localisations", lambda: info_localisations(self.api, iid))
+        if locs is not None:
+            wanted, by_locale = self.wanted_locales(locs)
+            if not wanted:
+                self.miss("app info localisation", "none exists: run apply")
+            for locale in wanted:
+                loc = by_locale.get(locale)
+                prefix = "app info localisation %s " % locale
+                if loc is None:
+                    self.miss(prefix.strip(), "does not exist: run apply")
+                    continue
+                a = attrs(loc)
+                self.text_field(prefix + "name", a.get("name"), LIMITS["name"], True, "empty: run apply")
+                self.text_field(prefix + "subtitle", a.get("subtitle"), LIMITS["subtitle"], False, "")
+                if a.get("privacyPolicyUrl"):
+                    self.ok(prefix + "privacy policy URL", "present")
+                else:
+                    self.miss(prefix + "privacy policy URL", "empty: run apply")
+        decl = self.guarded("age rating", lambda: age_declaration(self.api, iid))
+        if self.read_ok:
+            if decl is None:
+                self.miss("age rating", "no declaration found: answer Age Rating in App Store Connect")
+            else:
+                a = attrs(decl)
+                listed = (self.listing or {}).get("ageRating")
+                required = set(listed) if isinstance(listed, dict) and listed else set(a) - AGE_OPTIONAL
+                empty = sorted(k for k in required if a.get(k) is None)
+                if empty:
+                    self.miss("age rating", "%d answer(s) not set (%s): run apply, or answer them in Age Rating"
+                              % (len(empty), ", ".join(empty)))
+                else:
+                    self.ok("age rating", "%d answers set" % len(required))
+
+    def check_price(self, app_id):
+        schedule = self.guarded("price schedule", lambda: price_schedule(self.api, app_id))
+        if schedule is None:
+            if self.read_ok:
+                self.miss("price schedule", "not set: run apply to set Free, or choose a price")
+            return
+        got = self.guarded("price schedule prices", lambda: manual_prices(self.api, schedule["id"]))
+        if got is None:
+            return
+        data, included = got
+        if not data:
+            self.miss("price schedule", "no price is set: run apply to set Free, or choose a price")
+            return
+        amounts = [attrs(i).get("customerPrice") for i in included
+                   if str(i.get("type", "")).startswith("appPricePoint")]
+        if amounts and all(is_zero(x) for x in amounts):
+            self.ok("price schedule", "set, Free")
+        else:
+            self.info("price schedule", "set, not Free")
+
+    def check_availability(self, app_id):
+        avail = self.guarded("availability", lambda: app_availability(self.api, app_id))
+        if avail is None:
+            if self.read_ok:
+                self.miss("availability", "not set: choose territories in App Store Connect, Pricing and Availability")
+            return
+        count = self.guarded("availability territories", lambda: available_territories(self.api, avail["id"]))
+        if count is None:
+            return
+        if count:
+            self.ok("availability", "%d territories" % count)
+        else:
+            self.miss("availability", "no territory is available: choose territories in Pricing and Availability")
+
+    def manual_lines(self):
+        self.out.line("MANUAL", "App Privacy questionnaire",
+                      "answer Data Not Collected in App Store Connect, App Privacy")
+        self.out.line("MANUAL", "Export compliance",
+                      "is set per build; confirm the build shows no Missing Compliance")
+        self.out.line("MANUAL", "Press Submit for Review")
+
+    def finish(self):
+        if self.missing:
+            self.out.raw("RESULT: %d item(s) missing. Fix them, then run check again." % self.missing)
+        else:
+            self.out.raw("RESULT: nothing missing that the API can see. Do the manual steps.")
+        return 0
+
+
+def run_check(api, out, bundle_id, listing):
+    return Checker(api, out, bundle_id, listing).run()
+
+
 # ---------------------------------------------------------------- CLI -------
 
 def read_env(out):
@@ -396,7 +992,8 @@ def build_parser():
     parser = argparse.ArgumentParser(prog="asc_tool.py", description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
     chk = sub.add_parser("check", help="read-only report of what is still missing")
-    chk.add_argument("--listing", default=None, help="path to listing.json (optional for check)")
+    chk.add_argument("--listing", default="AppStore/listing.json",
+                     help="path to listing.json (optional for check, ignored when the file is absent)")
     app = sub.add_parser("apply", help="write listing data, build and screenshots")
     app.add_argument("--listing", default="AppStore/listing.json")
     return parser
@@ -412,8 +1009,30 @@ def main(argv=None, transport=None, sleep=time.sleep, clock=time.time, stream=No
     except ConfigError as exc:
         out.raw("ERROR configuration: %s" % exc)
         return 2
-    out.raw("ERROR %s is not implemented yet" % args.command)
-    return 2
+    listing, problems = load_listing(args.listing)
+    if problems:
+        for problem in problems:
+            out.raw("ERROR listing: %s" % problem)
+        if args.command == "apply":
+            return 1
+        listing = None
+        out.raw("INFO listing: ignored for check because it is not valid")
+    try:
+        if args.command == "check":
+            code = run_check(api, out, bundle, listing)
+            out.write_summary("App Store Connect check")
+            return code
+        out.raw("ERROR apply is not implemented yet")
+        return 2
+    except AuthError as exc:
+        out.raw("ERROR credentials: %s" % exc)
+        return 2
+    except NetworkError as exc:
+        out.raw("ERROR network: %s" % exc)
+        return 2
+    except ConfigError as exc:
+        out.raw("ERROR configuration: %s" % exc)
+        return 2
 
 
 if __name__ == "__main__":

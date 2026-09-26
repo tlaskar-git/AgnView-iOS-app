@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives.asymmetric import ec  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature  # noqa: E402
 
 # Fake identifiers built from parts so secret scanners see no real shapes.
-FAKE_KEY_ID = "K" + "EY" + "FAKE" + "0001"
+FAKE_KEY_ID = "FAKE" + "KEY" + "001"
 FAKE_ISSUER = "00000000-0000-0000-0000-" + "000000000001"
 FAKE_BUNDLE = "test.example.fakeapp"
 
@@ -272,6 +272,343 @@ class SanitiserTests(unittest.TestCase):
                 text = fh.read()
             self.assertIn("PASS thing", text)
             self.assertNotIn(FAKE_KEY_ID, text)
+
+
+import fake_asc  # noqa: E402
+
+LISTING_PATH = os.path.join(HERE, "testdata", "listing.json")
+CONTACT = {
+    "REVIEW_CONTACT_FIRST_NAME": "Fakefirst",
+    "REVIEW_CONTACT_LAST_NAME": "Fakelast",
+    "REVIEW_CONTACT_PHONE": "+1 555 010 0199",
+    "REVIEW_CONTACT_EMAIL": "contact@example.test",
+}
+ENV_NAMES = ("ASC_API_KEY_ID", "ASC_API_ISSUER_ID", "ASC_API_KEY_P8_PATH", "APP_BUNDLE_ID") + t.REVIEW_CONTACT_ENV
+
+
+class ToolRun:
+    """Run t.main against a fake with a temporary key file and environment."""
+
+    def __init__(self, contact=None, key_id=FAKE_KEY_ID):
+        self.key = new_key()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.key_path = os.path.join(self.tmp.name, "key.p8")
+        with open(self.key_path, "wb") as fh:
+            fh.write(self.key.private_bytes(serialization.Encoding.PEM,
+                                            serialization.PrivateFormat.PKCS8,
+                                            serialization.NoEncryption()))
+        self.env = {"ASC_API_KEY_ID": key_id, "ASC_API_ISSUER_ID": FAKE_ISSUER,
+                    "ASC_API_KEY_P8_PATH": self.key_path, "APP_BUNDLE_ID": FAKE_BUNDLE}
+        self.env.update(contact or {})
+        self.saved = {}
+
+    def fake(self, complete=True, **kw):
+        return fake_asc.build_app(FAKE_BUNDLE, public_key=self.key.public_key(), complete=complete, **kw)
+
+    def run(self, transport, argv, summary=None):
+        self.saved = {n: os.environ.get(n) for n in ENV_NAMES + ("GITHUB_STEP_SUMMARY",)}
+        for name in ENV_NAMES:
+            os.environ.pop(name, None)
+        os.environ.update(self.env)
+        if summary:
+            os.environ["GITHUB_STEP_SUMMARY"] = summary
+        else:
+            os.environ.pop("GITHUB_STEP_SUMMARY", None)
+        stream = io.StringIO()
+        clock = Clock()
+        try:
+            code = t.main(argv, transport=transport, sleep=clock.sleep, clock=clock.time, stream=stream)
+        finally:
+            for name, value in self.saved.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+        return code, stream.getvalue().splitlines()
+
+    def close(self):
+        self.tmp.cleanup()
+
+
+class CheckTests(unittest.TestCase):
+    def setUp(self):
+        self.tool = ToolRun(CONTACT)
+        self.addCleanup(self.tool.close)
+
+    def check(self, fake, argv=None):
+        return self.tool.run(fake, argv or ["check", "--listing", LISTING_PATH])
+
+    def statuses(self, lines, kind):
+        return [l for l in lines if l.startswith(kind + " ")]
+
+    def test_complete_app_has_nothing_missing(self):
+        fake = self.tool.fake()
+        code, lines = self.check(fake)
+        self.assertEqual(code, 0)
+        self.assertEqual(self.statuses(lines, "MISSING"), [], "\n".join(lines))
+        self.assertIn("PASS app record: found by bundle id", lines)
+        self.assertIn("PASS editable version: 1.0, state PREPARE_FOR_SUBMISSION", lines)
+        self.assertIn("PASS build attached: build 7, version 1.0, processing VALID", lines)
+        self.assertIn("PASS newest processed build: build 7 matches version 1.0", lines)
+        self.assertTrue(any(l.startswith("PASS screenshots en-US iPhone 6.9 inch: 2 in APP_IPHONE_67") for l in lines))
+        self.assertTrue(any(l.startswith("PASS screenshots en-US iPad 13 inch: 2 in APP_IPAD_PRO_3GEN_129") for l in lines))
+        self.assertIn("PASS price schedule: set, Free", lines)
+        self.assertIn("PASS availability: 3 territories", lines)
+        self.assertEqual(len(self.statuses(lines, "MANUAL")), 3)
+        self.assertIn("MANUAL App Privacy questionnaire: answer Data Not Collected in App Store Connect, App Privacy", lines)
+        self.assertIn("MANUAL Press Submit for Review", lines)
+        self.assertTrue(lines[-1].startswith("RESULT: nothing missing"))
+        self.assertEqual([e["method"] for e in fake.log if e["method"] != "GET"], [])
+
+    def test_every_request_is_signed_and_read_only(self):
+        fake = self.tool.fake()
+        self.check(fake)
+        self.assertGreater(len(fake.log), 10)
+        self.assertEqual({e["method"] for e in fake.log}, {"GET"})
+
+    def test_missing_localisation(self):
+        fake = self.tool.fake()
+        fake.db["appStoreVersionLocalizations"].clear()
+        code, lines = self.check(fake)
+        self.assertEqual(code, 0)
+        self.assertIn("MISSING version localisation en-US: does not exist: run apply", lines)
+        self.assertTrue(any(l.startswith("MISSING screenshots en-US") for l in lines))
+
+    def test_localisation_fields_and_limits(self):
+        fake = self.tool.fake()
+        loc = fake.all("appStoreVersionLocalizations")[0]
+        loc["attributes"].update({"description": "", "keywords": "k" * 101, "supportUrl": ""})
+        _c, lines = self.check(fake)
+        self.assertTrue(any(l.startswith("MISSING version localisation en-US description") for l in lines))
+        self.assertIn("MISSING version localisation en-US keywords: 101 characters, the limit is 100", lines)
+        self.assertTrue(any(l.startswith("MISSING version localisation en-US support URL") for l in lines))
+        self.assertIn("PASS version localisation en-US promotional text: 5/170 characters", lines)
+
+    def test_no_build(self):
+        fake = self.tool.fake()
+        fake.all("appStoreVersions")[0]["rels"].pop("build")
+        fake.db["builds"].clear()
+        _c, lines = self.check(fake)
+        self.assertTrue(any(l.startswith("MISSING build attached: no build is attached") for l in lines))
+        self.assertTrue(any(l.startswith("MISSING newest processed build: no valid build for version 1.0") for l in lines))
+
+    def test_build_still_processing(self):
+        fake = self.tool.fake()
+        fake.all("builds")[0]["attributes"]["processingState"] = "PROCESSING"
+        _c, lines = self.check(fake)
+        self.assertIn("MISSING build attached: build 7 is attached but its processing state is PROCESSING", lines)
+        self.assertTrue(any("1 processing" in l for l in lines))
+
+    def test_wrong_build_for_other_version(self):
+        fake = self.tool.fake()
+        old = fake.add("preReleaseVersions", {"version": "0.9"}, parent="900001")
+        fake.all("builds")[0]["rels"]["preReleaseVersion"] = {"type": "preReleaseVersions", "id": old["id"]}
+        _c, lines = self.check(fake)
+        self.assertIn("MISSING build attached: the attached build is for version 0.9 but the editable version is 1.0: run apply", lines)
+        self.assertTrue(any(l.startswith("MISSING newest processed build") for l in lines))
+
+    def test_newer_build_is_reported(self):
+        fake = self.tool.fake()
+        pre = fake.all("preReleaseVersions")[0]
+        fake.add("builds", {"version": "8", "processingState": "VALID", "expired": False,
+                            "uploadedDate": "2026-09-02T10:00:00Z", "usesNonExemptEncryption": True},
+                 parent="900001", rels={"preReleaseVersion": {"type": "preReleaseVersions", "id": pre["id"]}})
+        _c, lines = self.check(fake)
+        self.assertIn("INFO newest build: build 8 is newer and valid, the attached build is 7", lines)
+
+    def test_screenshots_missing_and_too_many(self):
+        fake = self.tool.fake()
+        sets = fake.all("appScreenshotSets")
+        for shot in list(fake.all("appScreenshots", sets[1]["id"])):
+            del fake.db["appScreenshots"][shot["id"]]
+        for i in range(11):
+            fake.add("appScreenshots", {"fileName": "x%02d.png" % i, "assetDeliveryState": {"state": "COMPLETE"}},
+                     parent=sets[0]["id"])
+        _c, lines = self.check(fake)
+        self.assertTrue(any(l.startswith("MISSING screenshots en-US iPad 13 inch: none uploaded") for l in lines))
+        self.assertIn("MISSING screenshots en-US iPhone 6.9 inch: 13 screenshots in APP_IPHONE_67, the maximum is 10", lines)
+
+    def test_screenshot_not_complete(self):
+        fake = self.tool.fake()
+        shot = fake.all("appScreenshots")[0]
+        shot["attributes"]["assetDeliveryState"]["state"] = "UPLOAD_COMPLETE"
+        _c, lines = self.check(fake)
+        self.assertTrue(any("are not COMPLETE yet" in l for l in lines))
+
+    def test_fresh_app_lists_everything_to_do(self):
+        fake = self.tool.fake(complete=False)
+        code, lines = self.check(fake)
+        self.assertEqual(code, 0)
+        missing = "\n".join(self.statuses(lines, "MISSING"))
+        for word in ("content rights declaration", "copyright", "build attached", "version localisation en-US",
+                     "app info localisation en-US", "primary category", "age rating", "app review details",
+                     "screenshots en-US", "price schedule", "availability"):
+            self.assertIn(word, missing)
+
+    def test_age_rating_uses_listing_keys(self):
+        fake = self.tool.fake()
+        decl = fake.all("ageRatingDeclarations")[0]
+        decl["attributes"]["gambling"] = None
+        _c, lines = self.check(fake)
+        self.assertTrue(any(l.startswith("MISSING age rating: 1 answer(s) not set (gambling)") for l in lines))
+
+    def test_review_contact_missing_names_secret_only(self):
+        fake = self.tool.fake()
+        detail = fake.all("appStoreReviewDetails")[0]
+        detail["attributes"].update({"contactPhone": None, "contactEmail": ""})
+        _c, lines = self.check(fake)
+        text = "\n".join(lines)
+        self.assertIn("MISSING app review contact phone: empty: add the REVIEW_CONTACT_PHONE secret", text)
+        self.assertIn("MISSING app review contact email", text)
+        self.assertIn("PASS app review contact first name: present", lines)
+        self.assertNotIn("Fakefirst", text)
+        self.assertNotIn("+353", text)
+        self.assertNotIn("test@example.test", text)
+
+    def test_demo_account_required_without_credentials(self):
+        fake = self.tool.fake()
+        fake.all("appStoreReviewDetails")[0]["attributes"]["demoAccountRequired"] = True
+        _c, lines = self.check(fake)
+        self.assertTrue(any(l.startswith("MISSING app review demo account: required but") for l in lines))
+
+    def test_no_price_and_paid_price(self):
+        fake = self.tool.fake()
+        fake.db["appPriceSchedules"].clear()
+        _c, lines = self.check(fake)
+        self.assertTrue(any(l.startswith("MISSING price schedule: not set") for l in lines))
+        fake = self.tool.fake()
+        price = fake.all("appPrices")[0]
+        price["rels"]["appPricePoint"] = {"type": "appPricePoints", "id": "pp-paid"}
+        _c, lines = self.check(fake)
+        self.assertIn("INFO price schedule: set, not Free", lines)
+
+    def test_no_editable_version(self):
+        fake = self.tool.fake()
+        fake.all("appStoreVersions")[0]["attributes"]["appVersionState"] = "WAITING_FOR_REVIEW"
+        _c, lines = self.check(fake)
+        self.assertTrue(any(l.startswith("MISSING editable version: no version can be edited (states: WAITING_FOR_REVIEW)") for l in lines))
+
+    def test_no_app_record(self):
+        fake = self.tool.fake()
+        fake.db["apps"].clear()
+        code, lines = self.check(fake)
+        self.assertEqual(code, 0)
+        self.assertTrue(any(l.startswith("MISSING app record") for l in lines))
+        self.assertEqual(len(self.statuses(lines, "MANUAL")), 3)
+
+    def test_one_forbidden_read_is_info_not_failure(self):
+        fake = self.tool.fake()
+        fake.failures.append(("GET", r"appAvailabilityV2", 403, [{"code": "FORBIDDEN_ERROR", "title": "Forbidden", "detail": "no access"}]))
+        code, lines = self.check(fake)
+        self.assertEqual(code, 0)
+        self.assertTrue(any(l.startswith("INFO availability: could not be read: HTTP 403 | FORBIDDEN_ERROR") for l in lines))
+        self.assertEqual(self.statuses(lines, "MISSING"), [])
+
+    def test_rejected_credentials_exit_2(self):
+        fake = self.tool.fake()
+        fake.public_key = new_key().public_key()  # signature no longer verifies
+        code, lines = self.check(fake)
+        self.assertEqual(code, 2)
+        self.assertTrue(any(l.startswith("ERROR credentials:") for l in lines))
+
+    def test_forbidden_first_call_exit_2(self):
+        fake = self.tool.fake()
+        fake.failures.append(("GET", r"^/v1/apps$", 403, [{"code": "FORBIDDEN_ERROR", "title": "Forbidden", "detail": "role"}]))
+        code, lines = self.check(fake)
+        self.assertEqual(code, 2)
+
+    def test_unreachable_exit_2(self):
+        def down(*_a):
+            raise urllib.error.URLError("down")
+        code, lines = self.tool.run(down, ["check"])
+        self.assertEqual(code, 2)
+        self.assertTrue(any(l.startswith("ERROR network:") for l in lines))
+
+    def test_bad_configuration_exit_2(self):
+        tool = ToolRun(key_id="short")
+        self.addCleanup(tool.close)
+        code, lines = tool.run(tool.fake(), ["check"])
+        self.assertEqual(code, 2)
+        self.assertTrue(any("ASC_API_KEY_ID" in l for l in lines))
+
+    def test_invalid_listing_is_ignored_for_check(self):
+        bad = os.path.join(self.tool.tmp.name, "bad.json")
+        with open(bad, "w", encoding="utf-8") as fh:
+            fh.write('{"name": "' + "n" * 40 + '"}')
+        code, lines = self.check(self.tool.fake(), ["check", "--listing", bad])
+        self.assertEqual(code, 0)
+        self.assertTrue(any(l.startswith("ERROR listing: name: 40 characters") for l in lines))
+
+    def test_no_secret_in_any_line_even_when_the_api_echoes_it(self):
+        fake = self.tool.fake()
+        echo = {"code": "ENTITY_ERROR", "title": "Bad", "detail": "app %s, key %s, issuer %s, mail %s phone %s id 1234567890" % (
+            FAKE_BUNDLE, FAKE_KEY_ID, FAKE_ISSUER, CONTACT["REVIEW_CONTACT_EMAIL"], CONTACT["REVIEW_CONTACT_PHONE"])}
+        fake.failures.append(("GET", r"appPriceSchedule$", 500, [echo]))
+        fake.failures.append(("GET", r"appAvailabilityV2", 400, [echo]))
+        tool_env = dict(CONTACT)
+        code, lines = self.check(fake)
+        self.assertEqual(code, 0)
+        blob = "\n".join(lines)
+        for secret in [FAKE_BUNDLE, FAKE_KEY_ID, FAKE_ISSUER, "1234567890", "555 010 0199", "5550100199"] + list(tool_env.values()):
+            self.assertNotIn(secret, blob)
+        self.assertIn("ENTITY_ERROR", blob)
+
+    def test_summary_file_written_without_secrets(self):
+        fake = self.tool.fake()
+        summary = os.path.join(self.tool.tmp.name, "summary.md")
+        code, _lines = self.tool.run(fake, ["check", "--listing", LISTING_PATH], summary=summary)
+        self.assertEqual(code, 0)
+        with open(summary, encoding="utf-8") as fh:
+            text = fh.read()
+        self.assertIn("PASS app record", text)
+        self.assertIn("MANUAL Press Submit for Review", text)
+        for secret in (FAKE_BUNDLE, FAKE_KEY_ID, FAKE_ISSUER):
+            self.assertNotIn(secret, text)
+
+    def test_all_lines_use_a_known_prefix(self):
+        _c, lines = self.check(self.tool.fake(complete=False))
+        for line in lines:
+            self.assertRegex(line, r"^(PASS|MISSING|INFO|MANUAL|RESULT|ERROR|SET|SKIP|FAIL)\b", line)
+
+
+class ListingTests(unittest.TestCase):
+    def load(self):
+        with open(LISTING_PATH, encoding="utf-8") as fh:
+            return json.load(fh)
+
+    def test_fixture_is_valid_and_has_the_agreed_keys(self):
+        doc = self.load()
+        self.assertEqual(t.validate_listing(doc), [])
+        self.assertEqual(set(doc), set(t.LISTING_KEYS))
+
+    def test_limits_rejected(self):
+        for key, limit in t.LIMITS.items():
+            doc = self.load()
+            doc[key] = "x" * (limit + 1)
+            problems = t.validate_listing(doc)
+            self.assertEqual(len(problems), 1, key)
+            self.assertIn("%s: %d characters, the limit is %d" % (key, limit + 1, limit), problems[0])
+            doc[key] = "x" * limit
+            self.assertEqual(t.validate_listing(doc), [], key)
+
+    def test_missing_key_and_bad_types(self):
+        doc = self.load()
+        del doc["copyright"]
+        doc["reviewDemoRequired"] = "no"
+        doc["supportUrl"] = "not a url"
+        doc["contentRightsDeclaration"] = "MAYBE"
+        doc["ageRating"] = {"advertising": 3}
+        doc["locale"] = "English"
+        joined = " | ".join(t.validate_listing(doc))
+        for word in ("copyright: key is missing", "reviewDemoRequired", "supportUrl", "contentRightsDeclaration",
+                     "ageRating.advertising", "locale"):
+            self.assertIn(word, joined)
+
+    def test_load_listing(self):
+        doc, problems = t.load_listing(LISTING_PATH)
+        self.assertEqual(problems, [])
+        self.assertEqual(doc["locale"], "en-US")
+        self.assertEqual(t.load_listing(os.path.join(HERE, "nope.json")), (None, []))
 
 
 if __name__ == "__main__":
