@@ -85,16 +85,23 @@ struct PipelinesView: View {
                             .accessibilityIdentifier("pipelines-empty")
                     } else {
                         ForEach(model.jobs) { job in
-                            NavigationLink {
-                                JobDetailView(jobId: job.id)
-                            } label: {
-                                JobRow(job: job, reservesMenuSpace: true)
-                            }
-                            .overlay(alignment: .topTrailing) {
+                            // The row opens the pipeline. The menu and the chevron
+                            // sit beside it, so nothing overlaps.
+                            HStack(alignment: .top, spacing: 4) {
+                                Button {
+                                    opened = OpenedJob(id: job.id)
+                                } label: {
+                                    JobRow(job: job)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("job-row")
                                 PipelineMenu(job: job, popsOnDelete: false)
-                                    .padding(.top, 4)
+                                Image(systemName: "chevron.right")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                                    .frame(minHeight: Theme.minTap)
+                                    .accessibilityHidden(true)
                             }
-                            .accessibilityIdentifier("job-row")
                         }
                     }
                 } footer: {
@@ -166,7 +173,8 @@ struct JobRow: View {
                 .font(.footnote)
                 .foregroundStyle(Theme.textSecondary)
         }
-        .frame(minHeight: Theme.minTap)
+        .frame(maxWidth: .infinity, minHeight: Theme.minTap, alignment: .leading)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
 }
@@ -220,7 +228,7 @@ struct PipelineMenu: View {
             Image(systemName: "ellipsis.circle")
                 .font(.title3)
                 .foregroundStyle(Theme.textSecondary)
-                .frame(width: Theme.minTap - 8, height: Theme.minTap - 8)
+                .frame(width: Theme.minTap, height: Theme.minTap)
                 .contentShape(Rectangle())
         }
         .accessibilityLabel("Pipeline actions")
