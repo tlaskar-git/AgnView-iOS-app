@@ -132,7 +132,7 @@ extension Set where Element == Capability {
 
     /// What an iroh session can do, read from the hello frame's list.
     static func irohGranted(hello names: [String]?) -> Set<Capability> {
-        let names = Set(names ?? [])
+        let names = Swift.Set<String>(names ?? [])
         guard names.contains(HelloCapability.api) else { return .iroh }
         return names.contains(HelloCapability.uploads) ? .irohJobs : .irohAPI
     }
