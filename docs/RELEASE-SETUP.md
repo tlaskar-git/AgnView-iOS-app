@@ -170,7 +170,7 @@ All signing tool output in the workflows passes through `Tools/ci/redact_log.py`
 The `appstore-connect` workflow runs `Tools/asc/asc_tool.py` against the App Store Connect API. It has two modes.
 
 - `check` only reads. It prints what is still missing before the app can go to App Review.
-- `apply` writes everything the API allows, from `AppStore/listing.json`: listing text, categories, age rating, content rights, copyright, the build, App Review notes, screenshots and a Free price. It skips a step when the data is missing. It changes only values that differ, so a second run writes nothing.
+- `apply` writes everything the API allows, from `AppStore/listing.json`: listing text, categories, age rating, content rights, copyright, the version string, the build, App Review notes, screenshots, a Free price and availability. It skips a step when the data is missing. It changes only values that differ, so a second run writes nothing.
 
 Neither mode submits the app. It never creates a review submission and it never deletes anything, apart from replacing one screenshot set when you ask for that. You still press Submit for Review yourself.
 
@@ -186,6 +186,22 @@ The workflow uses the secrets `ASC_API_KEY_ID`, `ASC_API_ISSUER_ID`, `ASC_API_KE
 For `apply`, choose `mode` `apply`. Give `screenshots_run_id` the run id of an `appstore-screenshots` run to upload its screenshots. The artifact `appstore-screenshots` must hold one folder per display type, for example `APP_IPHONE_67` and `APP_IPAD_PRO_3GEN_129`, each with numbered PNG files. Tick `replace_screenshots` only to replace a set that already holds screenshots. Without it the tool leaves an existing set alone.
 
 The tool checks every screenshot against the accepted pixel sizes of its display type before it uploads anything. It uploads in Apple's three steps: reserve the screenshot, send the file parts, then confirm with the MD5 checksum and wait until Apple reports the upload complete.
+
+`apply` has these extra inputs. All have safe defaults.
+
+| Input | Default | Meaning |
+|---|---|---|
+| `set_version` | `auto` | `auto` sets the editable version string to the version of the newest valid build, then attaches that build. `keep` leaves the version alone. A value such as `0.1.5` sets that version. The tool refuses when the version is not editable. |
+| `territories` | `all` | `all` makes the app available in every territory, including new ones. A list such as `USA,IRL` makes it available in those only. |
+| `locale` | empty | The locale that receives the listing text. Empty means the app's primary locale. |
+
+### Target locale
+
+`AppStore/listing.json` is the text source. Its `locale` key names the language of the text. The tool writes that text to the app's primary locale, which it reads from the app record, for both the version localisation and the app info localisation. Set the `locale` input to write to another locale instead. Every run prints the target locale as `INFO target locale`, and `INFO listing text` when the source locale differs from the target.
+
+### Version and build
+
+The API attaches only a build whose version equals the editable version. The editable version of a new app is `1.0`. With `set_version` `auto`, `apply` first changes the editable version string to the version of the newest valid build, then attaches the newest valid build of that version. `check` prints a `MISSING version string` line when the two differ and says what `apply` will do. The lines `SET version` and `SET build` name the version and the build number. Neither is secret.
 
 ### Output lines
 
@@ -203,6 +219,25 @@ The tool checks every screenshot against the accepted pixel sizes of its display
 `check` exits with status 0 whatever it finds. It exits with status 2 when the API is unreachable or rejects the credentials. `apply` exits with status 1 when a step fails.
 
 No line shows a bundle ID, key ID, issuer ID, team ID, name, email, phone number or account identifier. Every line passes through a filter that removes secret values and anything that looks like an identifier, an email or a token.
+
+### What the first real run printed
+
+The first real `check` run produced these line types. No line showed an identifier.
+
+- `PASS` for the app record, the editable version, the newest processed build and the app info name.
+- `MISSING` for content rights, copyright, version localisation fields (description, keywords, support URL), screenshots for both display types, App Review details, primary category, privacy policy URL, age rating answers and availability.
+- `INFO` for optional fields that were empty and for two reads that failed: the attached build (Apple rejects the `include` parameter on that call) and the price schedule (Apple answers with an empty stub, and the prices call on that stub returns 404). The tool now handles both. A fresh app now prints no `could not be read` line.
+- `MANUAL` for the App Privacy questionnaire, export compliance and Submit for Review.
+
+### Run order
+
+1. Merge the change that adds `AppStore/listing.json`.
+2. Run `appstore-connect` with `mode` `check`. Read the `MISSING` lines.
+3. Run `appstore-screenshots` and note its run id.
+4. Run `appstore-connect` with `mode` `apply`, `set_version` `auto` and `screenshots_run_id` set. Add `replace_screenshots` only to replace a set.
+5. Run `appstore-connect` with `mode` `check` again. Only the manual items must remain.
+6. Do the manual items below.
+7. Press Submit for Review in App Store Connect.
 
 ### Review contact secrets
 
