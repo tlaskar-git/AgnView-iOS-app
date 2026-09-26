@@ -4,7 +4,7 @@ struct UsageView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        ScreenChrome(screen: .usage, trailing: { refreshButton }) {
+        ScreenChrome(screen: .usage, actions: { actionRow }) {
             List {
                 BannerSection()
                 Section {
@@ -48,20 +48,17 @@ struct UsageView: View {
         }
     }
 
-    private var refreshButton: some View {
-        Button {
-            Task { await model.refreshUsageFromHub() }
-        } label: {
-            if model.usageRefreshing {
-                ProgressView()
-            } else {
-                Label("Refresh", systemImage: "arrow.clockwise")
-                    .labelStyle(.iconOnly)
+    private var actionRow: some View {
+        ActionRow {
+            UpdatedText(date: model.usageSnapshot?.takenAt, busy: model.usageRefreshing,
+                        identifier: "usage-updated")
+        } trailing: {
+            ActionTextButton(title: "Refresh", busy: model.usageRefreshing,
+                             disabled: model.usageRefreshing,
+                             identifier: "usage-refresh") {
+                Task { await model.refreshUsageFromHub() }
             }
         }
-        .disabled(model.usageRefreshing)
-        .accessibilityLabel("Refresh")
-        .accessibilityIdentifier("usage-refresh")
     }
 }
 

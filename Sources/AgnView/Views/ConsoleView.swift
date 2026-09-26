@@ -4,7 +4,7 @@ struct ConsoleView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        ScreenChrome(screen: .console, trailing: { AgentFilterMenu() }) {
+        ScreenChrome(screen: .console) {
             VStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 8) {
                     ScreenBanners(inList: false)

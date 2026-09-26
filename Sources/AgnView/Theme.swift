@@ -40,6 +40,45 @@ enum Theme {
     static let warning = Color(light: 0x92400E, dark: 0xFCD34D)
     static let error = Color(light: 0xB91C1C, dark: 0xFCA5A5)
 
+    // MARK: Approved design v4 palette
+
+    /// Opaque fallback behind glass surfaces, and the hero button ring.
+    static let glassSolid = Color(light: 0xFBFBFD, dark: 0x2A2A2D)
+    static let glassLine = Color(light: 0xFFFFFF, dark: 0x3A3A3F)
+    /// The Console canvas and its user bubble.
+    static let chatBackground = Color(light: 0xFAF8F3, dark: 0x1A1918)
+    static let bubble = Color(light: 0xECE6DC, dark: 0x35322E)
+    static let bubbleText = Color(light: 0x1F1B16, dark: 0xF3EFE8)
+    static let codeBackground = Color(light: 0xF3EFE7, dark: 0x242220)
+    static let codeHeader = Color(light: 0xE9E3D8, dark: 0x2E2B28)
+    static let codeLine = Color(light: 0xDDD5C7, dark: 0x3B3733)
+    static let codeText = Color(light: 0x2A2621, dark: 0xEDE8DF)
+    /// Fill behind an active tab and behind chips.
+    static let chipFill = Color(uiColor: .tertiarySystemFill)
+    /// The fill behind white text on the send button and the hero tab.
+    static let accentFill = Color(light: 0x1D4ED8, dark: 0x3B6CF0)
+    /// Accent text and outlines that meet 4.5:1 on the page and glass.
+    static let accentText = Color(light: 0x1D4ED8, dark: 0x7EA6FF)
+
+    static func agentColor(_ agent: String) -> Color {
+        switch agent {
+        case "claude_code": return Color(light: 0xC15F3C, dark: 0xE07A55)
+        case "codex": return Color(light: 0x0E9170, dark: 0x2CC49A)
+        case "antigravity": return Color(light: 0x1A73E8, dark: 0x5B9BFF)
+        case "deepseek": return Color(light: 0x5B5BD6, dark: 0x8B8BFF)
+        default: return textSecondary
+        }
+    }
+
+    static func routeColor(_ route: Route) -> Color {
+        switch route {
+        case .lan: return Color(light: 0x16A34A, dark: 0x34D399)
+        case .direct: return Color(light: 0x2563EB, dark: 0x60A5FA)
+        case .relay: return Color(light: 0xC2570C, dark: 0xFB923C)
+        case .offline: return Color(light: 0xDC2626, dark: 0xF87171)
+        }
+    }
+
     static let cardRadius: CGFloat = 12
     static let modalRadius: CGFloat = 16
     static let cardPadding: CGFloat = 16

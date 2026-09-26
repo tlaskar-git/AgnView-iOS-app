@@ -87,6 +87,8 @@ final class AppModel: ObservableObject {
     @Published var features: HubFeatures = .phaseA
     /// When the Sessions list was last read.
     @Published private(set) var sessionsUpdatedAt: Date?
+    /// When the pipeline list was last read.
+    @Published private(set) var jobsUpdatedAt: Date?
     /// True while a usage refresh runs.
     @Published private(set) var usageRefreshing = false
     @Published var pairingResult: PairingResult = .idle
@@ -458,6 +460,7 @@ final class AppModel: ObservableObject {
             guard gen == generation else { return }
             jobs = list
             jobsState = .loaded(list)
+            jobsUpdatedAt = now()
         } catch {
             guard gen == generation, let message = panelFailure(error, panel: "Pipelines") else { return }
             jobsState = .failed(message)
@@ -616,6 +619,7 @@ final class AppModel: ObservableObject {
         catalogue = .empty
         catalogueOrigin = .none
         sessionsUpdatedAt = nil
+        jobsUpdatedAt = nil
         statusLine = "No hub connected"
     }
 

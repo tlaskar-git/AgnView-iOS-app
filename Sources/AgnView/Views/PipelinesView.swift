@@ -58,7 +58,7 @@ struct PipelinesView: View {
     @State private var opened: OpenedJob?
 
     var body: some View {
-        ScreenChrome(screen: .pipelines, trailing: { newButton }) {
+        ScreenChrome(screen: .pipelines, actions: { actionRow }) {
             List {
                 BannerSection()
                 if let notice = model.jobsNotice {
@@ -130,16 +130,16 @@ struct PipelinesView: View {
         }
     }
 
-    private var newButton: some View {
-        Button {
-            showNew = true
-        } label: {
-            Label("New pipeline", systemImage: "plus")
-                .labelStyle(.iconOnly)
+    private var actionRow: some View {
+        ActionRow {
+            UpdatedText(date: model.jobsUpdatedAt, identifier: "pipelines-updated")
+        } trailing: {
+            ActionTextButton(title: "New pipeline", systemImage: "plus",
+                             disabled: !model.canManageJobs,
+                             identifier: "pipelines-new") {
+                showNew = true
+            }
         }
-        .disabled(!model.canManageJobs)
-        .accessibilityLabel("New pipeline")
-        .accessibilityIdentifier("pipelines-new")
     }
 }
 
