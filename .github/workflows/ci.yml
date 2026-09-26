@@ -27,6 +27,7 @@ jobs:
           set +x
           python3 Tools/ci/test_cert_match.py
           python3 Tools/ci/test_redact_log.py
+          python3 Tools/ci/test_listing.py
 
   build-test:
     name: build-test (${{ matrix.device }})

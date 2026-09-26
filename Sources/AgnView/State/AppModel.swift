@@ -92,8 +92,14 @@ final class AppModel: ObservableObject {
     @Published var pairingResult: PairingResult = .idle
     /// A one-off message for the screens, such as the removal note.
     @Published var notice: String?
+    /// True while the built-in demo runs. The demo has no machine, no key and
+    /// no network. Every screen reads sample data from a DemoHub.
+    @Published private(set) var isDemo = false
 
     // MARK: Derived state
+
+    /// The name the route pill and Settings show: "Demo" in demo mode.
+    var routeLabel: String { isDemo ? UserMessages.demoRouteLabel : route.label }
 
     var route: Route {
         guard case .online(let route, _) = connection else { return .offline }
@@ -619,7 +625,52 @@ final class AppModel: ObservableObject {
         statusLine = "No hub connected"
     }
 
+    // MARK: Demo mode
+
+    /// Starts the demo: a DemoHub answers every call in memory. Nothing is
+    /// stored, no socket opens and no Keychain item is written.
+    func startDemo() {
+        guard !isDemo else { return }
+        started = true
+        runTask?.cancel()
+        generation += 1
+        let gen = generation
+        if let old = liveSession {
+            Task { await old.close() }
+        }
+        resetHubData()
+        let hub = DemoHub()
+        let session = hub.makeSession()
+        isDemo = true
+        liveSession = session
+        client = HubClient(api: hub)
+        capabilities = session.capabilities
+        relayOnly = false
+        connection = .online(session.route, session.capabilities)
+        statusLine = UserMessages.demoStatus
+        notice = nil
+        pairingResult = .idle
+        Task { [weak self] in await self?.refreshDemo(generation: gen) }
+        runTask = Task { [weak self] in _ = await self?.consume(session) }
+    }
+
+    /// Leaves the demo and returns to the state before it.
+    func exitDemo() {
+        guard isDemo else { return }
+        resetHubData()
+        startConnection()
+    }
+
+    private func refreshDemo(generation gen: Int) async {
+        await refreshSessions()
+        await refreshUsage()
+        await refreshJobs()
+        await refreshCatalogue()
+        if gen == generation { statusLine = UserMessages.demoStatus }
+    }
+
     private func startConnection() {
+        isDemo = false
         runTask?.cancel()
         generation += 1
         let gen = generation
