@@ -69,6 +69,26 @@ final class AgnViewUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 1)
     }
 
+    /// The route pill sits on the right of the header, fully on screen, at the
+    /// approved inset from the edge and at the approved size.
+    private func assertPillVisible(file: StaticString = #filePath, line: UInt = #line) {
+        let pill = element("route-pill")
+        XCTAssertTrue(pill.waitForExistence(timeout: 10), "route-pill missing", file: file, line: line)
+        let window = app.windows.firstMatch.frame
+        let frame = pill.frame
+        XCTAssertTrue(window.contains(frame), "the pill is cut off: \(frame) in \(window)", file: file, line: line)
+        let inset: CGFloat = isPad ? 24 : 16
+        XCTAssertEqual(window.maxX - frame.maxX, inset, accuracy: 3,
+                       "the pill is not at the right inset: \(frame)", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(frame.height, 36, "the pill is too short: \(frame)", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(frame.width, 76, "the pill is too narrow: \(frame)", file: file, line: line)
+    }
+
+    /// Taps the chat area near the top, away from the composer.
+    private func tapChat() {
+        element("console-log").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+    }
+
     private func snap(_ name: String) {
         dismissSystemAlert()
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
@@ -171,6 +191,7 @@ final class AgnViewUITests: XCTestCase {
             let key = name.lowercased()
             open(name)
             need("route-pill")
+            assertPillVisible()
             if key == "console" {
                 let line = element("status-line")
                 need("status-line")
@@ -193,6 +214,100 @@ final class AgnViewUITests: XCTestCase {
         need("add-machine")
         needAnywhere("appearance-picker")
         snap("state-settings-machines")
+    }
+
+    /// Two machines: the active one says Active, the other has a Switch button
+    /// with a 44 pt target. Tapping the row opens its details. Tapping Switch
+    /// switches at once and confirms with a toast.
+    func testSettingsSwitchButton() throws {
+        launch(state: "machines")
+        open("Settings")
+        need("machine-row")
+        need("machine-active")
+        need("machine-switch-button")
+        let button = element("machine-switch-button")
+        XCTAssertGreaterThanOrEqual(button.frame.height, 44, "the Switch target is under 44 pt")
+        XCTAssertGreaterThanOrEqual(button.frame.width, 72, "the Switch button is narrower than 72 pt")
+        XCTAssertFalse(app.alerts.firstMatch.exists, "Switch opens a menu or dialog instead of switching")
+        snap("settings-switch")
+
+        // The row opens the details, with the name field and Remove.
+        element("machine-open").tap()
+        need("machine-detail")
+        need("machine-name")
+        need("machine-remove")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        need("machine-switch-button")
+
+        element("machine-switch-button").tap()
+        need("toast")
+        XCTAssertTrue(element("toast").label.hasPrefix("Switched to"), "no confirmation: \(element("toast").label)")
+        need("machine-active")
+        need("machine-switch-button")
+        assertPillVisible()
+    }
+
+    /// The Console shows a conversation: bubbles, plain agent replies, a code
+    /// block with Copy, the composer chips and no filter menu or Done button.
+    func testConsoleConversation() throws {
+        launch(state: "machines")
+        open("Console")
+        need("console-log")
+        need("console-row", timeout: 30)
+        need("code-block")
+        need("code-copy")
+        need("composer-agent")
+        need("composer-model")
+        need("composer-effort")
+        need("composer-attach")
+        need("composer-send")
+        need("tab-console")
+        XCTAssertFalse(element("console-filter").exists, "the filter menu is gone from the Console")
+        XCTAssertFalse(element("keyboard-done").exists)
+        assertPillVisible()
+        snap("console-chat")
+
+        let prompt = element("composer-prompt")
+        prompt.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "the keyboard never appeared")
+        XCTAssertFalse(element("keyboard-done").exists, "there is a Done button")
+        need("composer-send")
+        XCTAssertTrue(element("composer-send").isHittable, "Send is covered")
+        if !isPad {
+            let tab = element("tab-sessions")
+            XCTAssertFalse(tab.exists && tab.isHittable, "the tab bar stays over the keyboard")
+        }
+        snap("console-chat-keyboard")
+        tapChat()
+        let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
+                                               object: app.keyboards.firstMatch)
+        XCTAssertEqual(XCTWaiter().wait(for: [closed], timeout: 10), .completed,
+                       "tapping the chat did not close the keyboard")
+    }
+
+    /// The floating tab bar on iPhone: Sessions, Pipelines, Console, Usage,
+    /// Settings from left to right. The app opens on Console. A tap changes
+    /// the screen and a second tap stays on it.
+    func testTabBarOrderAndSelection() throws {
+        try XCTSkipIf(isPad, "iPad uses the sidebar")
+        launch(mock: true)
+        let ids = ["tab-sessions", "tab-pipelines", "tab-console", "tab-usage", "tab-settings"]
+        for id in ids { need(id) }
+        let xs = ids.map { element($0).frame.midX }
+        XCTAssertEqual(xs, xs.sorted(), "the tabs are not in order from left to right: \(xs)")
+        XCTAssertTrue(element("tab-console").isSelected, "the app must open on Console")
+        need("screen-console")
+        element("tab-usage").tap()
+        need("screen-usage")
+        XCTAssertTrue(element("tab-usage").isSelected)
+        XCTAssertFalse(element("tab-console").isSelected)
+        element("tab-usage").tap()
+        need("screen-usage")
+        element("tab-console").tap()
+        need("screen-console")
+        XCTAssertTrue(element("tab-console").isSelected)
+        XCTAssertEqual(element("tab-settings").label, "Settings")
+        XCTAssertEqual(element("tab-console").value as? String, "tab 3 of 5")
     }
 
     // MARK: Forced states
@@ -318,18 +433,19 @@ final class AgnViewUITests: XCTestCase {
         prompt.typeText("Example prompt")
         element("composer-send").tap()
         need("composer-result", timeout: 30)
-        let done = element("keyboard-done")
-        if done.waitForExistence(timeout: 5) {
-            done.tap()
-            let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
-                                                   object: app.keyboards.firstMatch)
-            XCTAssertEqual(XCTWaiter().wait(for: [closed], timeout: 10), .completed)
-        }
+        // There is no Done button. Tapping the chat closes the keyboard.
+        XCTAssertFalse(element("keyboard-done").exists, "there is a Done button")
+        XCTAssertTrue(app.keyboards.firstMatch.exists, "the keyboard should stay after Send")
+        tapChat()
+        let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
+                                               object: app.keyboards.firstMatch)
+        XCTAssertEqual(XCTWaiter().wait(for: [closed], timeout: 10), .completed,
+                       "tapping the chat did not close the keyboard")
     }
 
-    /// The keyboard toolbar carries Model and Effort on the left and Done on the
-    /// right, and nothing in it sits over Send.
-    func testKeyboardToolbarHasChipsAndDoesNotCoverSend() throws {
+    /// The keyboard has no toolbar. Agent, Model and Effort stay in the
+    /// composer chips above it and nothing sits over Send.
+    func testKeyboardHasNoToolbarAndSendStaysReachable() throws {
         launch(mock: true)
         open("Console")
         let prompt = element("composer-prompt")
@@ -342,17 +458,13 @@ final class AgnViewUITests: XCTestCase {
         need("composer-attach")
         prompt.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "the keyboard never appeared")
-        if !isPad {
-            need("toolbar-model", timeout: 10)
-            need("toolbar-effort", timeout: 10)
-            need("keyboard-done", timeout: 10)
-            let done = element("keyboard-done").frame
-            let send = element("composer-send").frame
-            XCTAssertFalse(done.intersects(send), "Done sits over Send")
-        }
+        XCTAssertFalse(element("keyboard-done").exists, "there is a Done button")
+        XCTAssertFalse(element("toolbar-model").exists, "there is a keyboard toolbar")
+        need("composer-send")
+        XCTAssertTrue(element("composer-send").isHittable, "Send is covered")
+        XCTAssertTrue(element("composer-agent").isHittable, "the agent chip is covered")
         snap("console-keyboard")
-        let done = element("keyboard-done")
-        if done.waitForExistence(timeout: 5) { done.tap() }
+        tapChat()
     }
 
     /// Model and Effort come from the hub and show on their chips.
@@ -485,25 +597,14 @@ final class AgnViewUITests: XCTestCase {
                         "build row reads: \(element("app-build").label)")
     }
 
-    /// The agent filter is a menu in the navigation bar and the composer picks
-    /// its agent from a menu. Every name shows in full.
-    func testConsoleFilterAndAgentMenus() throws {
+    /// The Console has no filter menu. The composer picks its agent from a menu
+    /// that always lists Claude Code, Codex, AntiGravity, DeepSeek in that
+    /// order, whichever agent is chosen. Every name shows in full.
+    func testConsoleAgentMenuKeepsAFixedOrder() throws {
         launch(mock: true)
         open("Console")
-        need("console-filter")
-        element("console-filter").tap()
-        let option = menuOption("AntiGravity")
-        XCTAssertTrue(option.exists, "the filter menu never offered AntiGravity")
-        XCTAssertTrue(menuOption("DeepSeek", timeout: 3).exists, "the filter menu has no DeepSeek")
-        snap("console-filter-menu")
-        option.tap()
-        need("filter-summary")
-        XCTAssertTrue(element("filter-summary").label.contains("AntiGravity"), "the filter is not shown")
-        element("console-filter").tap()
-        let all = menuOption("All agents")
-        XCTAssertTrue(all.exists, "the filter menu has no All option")
-        all.tap()
-        XCTAssertFalse(element("filter-summary").exists, "the filter stayed on")
+        XCTAssertFalse(element("console-filter").exists, "the filter menu is still there")
+        XCTAssertFalse(element("filter-summary").exists)
 
         let prompt = element("composer-prompt")
         XCTAssertTrue(prompt.waitForExistence(timeout: 30))
@@ -511,27 +612,45 @@ final class AgnViewUITests: XCTestCase {
                                                 object: prompt)
         XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed)
         need("composer-agent")
+
+        // Choose a different agent first, so a menu that sorts by selection would show it.
+        chooseAgent("codex", name: "Codex")
+        XCTAssertEqual(element("composer-agent").value as? String, "Codex")
+
         element("composer-agent").tap()
-        let agent = menuOption("AntiGravity")
-        XCTAssertTrue(agent.exists, "the agent menu never offered AntiGravity")
+        let names = ["Claude Code", "Codex", "AntiGravity", "DeepSeek"]
+        var tops: [CGFloat] = []
+        for name in names {
+            let item = menuOption(name)
+            XCTAssertTrue(item.exists, "the agent menu never offered \(name)")
+            tops.append(item.frame.minY)
+        }
+        XCTAssertEqual(tops, tops.sorted(), "the agent menu is not in the fixed order: \(tops)")
+        XCTAssertEqual(Set(tops).count, names.count, "two agents share a row: \(tops)")
         snap("console-agent-menu")
-        agent.tap()
+        menuOption("AntiGravity").tap()
         XCTAssertEqual(element("composer-agent").value as? String, "AntiGravity")
+
+        // The order does not move when another agent is chosen.
+        element("composer-agent").tap()
+        var again: [CGFloat] = []
+        for name in names { again.append(menuOption(name).frame.minY) }
+        XCTAssertEqual(again, again.sorted(), "the order changed with the selection: \(again)")
+        menuOption("Claude Code").tap()
+        XCTAssertEqual(element("composer-agent").value as? String, "Claude Code")
     }
 
-    /// Console and Settings in the dark appearance.
+    /// Console and Settings in the dark appearance, with a conversation and
+    /// two machines.
     func testDarkAppearanceConsoleAndSettings() throws {
-        launch(mock: true, appearance: "dark")
+        launch(state: "machines", appearance: "dark")
         open("Console")
-        let line = element("status-line")
-        need("status-line")
-        let healthy = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "label CONTAINS 'healthy'"), object: line)
-        XCTAssertEqual(XCTWaiter().wait(for: [healthy], timeout: 20), .completed,
-                       "status line never showed the healthy mock hub")
+        need("console-row", timeout: 30)
+        need("code-block")
         snap("dark-console")
         open("Settings")
         need("machine-row")
+        need("machine-switch-button")
         snap("dark-settings")
     }
 

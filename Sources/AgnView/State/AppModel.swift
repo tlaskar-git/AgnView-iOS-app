@@ -905,10 +905,17 @@ extension AppModel {
 
     /// Returns true when the state name is known and applied.
     func applyForcedState(_ name: String) -> Bool {
-        let states = ["offline", "authFailed", "keyRevoked", "relayOnly", "iroh", "irohJobs"]
+        let states = ["offline", "authFailed", "keyRevoked", "relayOnly", "iroh", "irohJobs", "machines"]
         guard states.contains(name) else { return false }
         if hubs.isEmpty {
-            _ = try? store.add(payload: AppModel.placeholderPayload)
+            if name == "machines" {
+                // Two machines, so the Switch button shows. The first is active.
+                for (index, title) in ["Studio Mac", "Windows PC"].enumerated() {
+                    _ = try? store.add(payload: AppModel.namedPlaceholder(title, idByte: UInt8(0x42 + index)))
+                }
+            } else {
+                _ = try? store.add(payload: AppModel.placeholderPayload)
+            }
             syncFromStore()
         }
         runTask?.cancel()
@@ -924,6 +931,9 @@ extension AppModel {
             connection = .keyRevoked
         case "irohJobs":
             applyForcedIrohJobs()
+        case "machines":
+            applyForcedIrohJobs()
+            seedConversation()
         default:
             resetHubData()
             connection = .online(.direct, .iroh)
@@ -952,6 +962,61 @@ extension AppModel {
             }
         }
         return true
+    }
+
+    /// A sample payload with a chosen name, for the two machines test state.
+    private static func namedPlaceholder(_ name: String, idByte: UInt8) -> PairingPayload {
+        PairingPayload(
+            version: 1, name: name, lanHost: "192.0.2.10", lanPort: 18845,
+            fingerprint: String(repeating: "a", count: 64),
+            hubId: Data(repeating: idByte, count: 16), key: Data(repeating: 0x41, count: 32),
+            irohTicket: nil)
+    }
+
+    /// A short conversation with a code block, and an agent that keeps
+    /// answering for a while, so the chat and its streaming dot can be seen.
+    private func seedConversation() {
+        let stamp = { (minutesAgo: Double) -> String in
+            ISO8601DateFormatter().string(from: self.now().addingTimeInterval(-minutesAgo * 60))
+        }
+        let code = [
+            "def require_token(request):",
+            "    token = request.headers.get(\"Authorization\")",
+            "    if not token:",
+            "        raise AuthError(\"Missing token\")",
+            "    return verify(token)",
+        ]
+        var rows: [(String, String, String, String?, Double)] = [
+            ("system", "system_notice", "Connected to Studio Mac", nil, 41),
+            ("user", "user_input", "Refactor the auth middleware so a missing token returns a clear error.", "session-1", 40),
+            ("claude_code", "stdout", "I moved the token check into one function that raises a typed error. Every route now handles the failure in the same place.", "session-1", 39.9),
+            ("claude_code", "stdout", "```python", "session-1", 39.9),
+        ]
+        rows += code.map { line -> (String, String, String, String?, Double) in
+            ("claude_code", "stdout", line, "session-1", 39.9)
+        }
+        rows += [
+            ("claude_code", "stdout", "```", "session-1", 39.9),
+            ("claude_code", "stdout", "Next I will add tests for the missing and expired cases.", "session-1", 39.9),
+            ("user", "user_input", "Write a migration for the sessions table.", "session-2", 25),
+            ("codex", "stdout", "Done. The migration adds a sessions table with an index on user_id.", "session-2", 24.9),
+            ("user", "user_input", "Summarise the open issues in the tracker.", "session-3", 1),
+            ("antigravity", "stdout", "There are 12 open issues. Most of them are about slow refresh on the Sessions screen, and three block the next", "session-3", 0.5),
+        ]
+        for (index, row) in rows.enumerated() {
+            ingest(ConsoleFrame.LogEntry(id: 1000 + index, agent: row.0, source: row.1, content: row.2,
+                                         timestamp: stamp(row.4), sessionId: row.3))
+        }
+        // The last agent keeps sending blank lines for a few minutes. They show
+        // nothing, but they keep the newest line young, so the dot stays on.
+        Task { [weak self] in
+            for index in 0..<100 {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard let self, self.connection.isOnline else { return }
+                self.ingest(ConsoleFrame.LogEntry(id: 2000 + index, agent: "antigravity", source: "stdout",
+                                                  content: " ", timestamp: stamp(0), sessionId: "session-3"))
+            }
+        }
     }
 
     /// An iroh relay session to a hub 0.1.13 or later: the mobile API with
