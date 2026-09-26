@@ -113,13 +113,24 @@ Copy the content of each `.b64` file into the matching secret. Use the team iden
 ## e. Release
 
 1. Merge the work to `main`.
-2. Push a tag that starts with `v`, for example `v0.1.0`, from `main`. The workflow refuses a tag whose commit is not on `main`.
+2. Push a tag that starts with `v`, for example `v1.0.3`, from `main`. The workflow refuses a tag whose commit is not on `main`.
 3. Open the run under Actions and approve the deployment to the `release` environment.
 4. Wait for the run to finish, then wait for App Store Connect to finish processing the build.
 5. In App Store Connect open TestFlight, add yourself as an internal tester, and accept the invitation.
 6. Install the build with the TestFlight app on your device.
 
 The marketing version comes from the tag. The build number comes from the workflow run number.
+
+### Version numbers
+
+The tag is the source of the released version. A release build takes `MARKETING_VERSION` from the tag without its leading `v` and `CURRENT_PROJECT_VERSION` from the workflow run number. Settings shows the marketing version only, for example `Version 1.0.3`. The build number sits in its own `Build` row in the About section and is never joined to the version.
+
+`project.yml` also carries defaults for both values. Simulator builds, unit tests, UI tests and their screenshots use those defaults, so they must match the last released version. Bump `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `project.yml` in the release pull request, then tag the merge commit with the same version.
+
+Two checks guard this.
+
+- `ci` reads `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` from `project.yml`, builds the simulator app and fails when its `Info.plist` differs. It also passes the version to the unit and UI tests, which fail when Settings shows another one.
+- `release` and `release-preflight` read the `Info.plist` inside the archive right after `xcodebuild archive`. They fail when `CFBundleShortVersionString` differs from the tag without the leading `v`, or `CFBundleVersion` differs from the run number. The message shows both values. Versions are not secret.
 
 ## Preflight
 

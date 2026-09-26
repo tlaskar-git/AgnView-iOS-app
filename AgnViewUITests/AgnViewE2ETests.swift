@@ -70,6 +70,49 @@ final class AgnViewE2ETests: XCTestCase {
         return nil
     }
 
+    /// An item of the menu that is open. Picker items in a menu show as
+    /// buttons on some systems and as menu items on others.
+    private func menuOption(_ name: String, timeout: TimeInterval = 10) -> XCUIElement {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if app.buttons[name].exists { return app.buttons[name] }
+            if app.menuItems[name].exists { return app.menuItems[name] }
+            Thread.sleep(forTimeInterval: 0.25)
+        } while Date() < deadline
+        return app.buttons[name]
+    }
+
+    /// Opens the agent menu in the composer and picks one agent.
+    private func chooseAgent(_ id: String, name: String) {
+        need("composer-agent")
+        element("composer-agent").tap()
+        let byId = element("composer-agent-option-" + id)
+        if byId.waitForExistence(timeout: 5) {
+            byId.tap()
+            return
+        }
+        let byName = menuOption(name)
+        XCTAssertTrue(byName.exists, "the agent menu never offered \(name)")
+        byName.tap()
+    }
+
+    /// Finds an element in a list. A list builds only the rows near the
+    /// screen, so this scrolls down and then back up until the element exists.
+    private func findAnywhere(_ id: String, timeout: TimeInterval = 20) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if element(id).waitForExistence(timeout: 3) { return true }
+            for _ in 0..<8 where !element(id).exists { app.swipeUp() }
+            if element(id).exists { return true }
+            for _ in 0..<8 where !element(id).exists { app.swipeDown() }
+        } while Date() < deadline && !element(id).exists
+        return element(id).exists
+    }
+
+    private func needAnywhere(_ id: String, timeout: TimeInterval = 20) {
+        XCTAssertTrue(findAnywhere(id, timeout: timeout), "\(id) missing")
+    }
+
     private func tapNav(_ name: String) {
         if isPad {
             let id = "nav-" + name.lowercased()
@@ -179,7 +222,7 @@ final class AgnViewE2ETests: XCTestCase {
         XCTAssertTrue(job.waitForExistence(timeout: 30) || element("pipelines-empty").exists,
                       "Pipelines showed neither a job nor an empty state")
         open("Usage")
-        let usageShown = element("provider-claude").waitForExistence(timeout: 30)
+        let usageShown = findAnywhere("provider-claude", timeout: 30)
             || element("usage-empty").waitForExistence(timeout: 5)
         XCTAssertTrue(usageShown, "Usage showed neither a card nor an empty state")
         XCTAssertFalse(element("usage-error").exists, "the real hub made Usage fail")
@@ -198,8 +241,8 @@ final class AgnViewE2ETests: XCTestCase {
                 byId.tap()
                 return
             }
-            let byName = app.buttons[name]
-            if byName.waitForExistence(timeout: 2) {
+            let byName = menuOption(name, timeout: 2)
+            if byName.exists {
                 byName.tap()
                 return
             }
@@ -214,7 +257,7 @@ final class AgnViewE2ETests: XCTestCase {
     func testModelAndEffortReachTheAgentAgainstRealHub() throws {
         try launch(hubKey: "AGNVIEW_MOCK_HUB_URL")
         waitForComposer()
-        element("composer-agent-codex").tap()
+        chooseAgent("codex", name: "Codex")
         choose(menu: "composer-model", optionId: "gpt-5", name: "GPT-5")
         choose(menu: "composer-effort", optionId: "low", name: "Low Reasoning")
         snap("model-effort-chosen")
@@ -316,9 +359,9 @@ final class AgnViewE2ETests: XCTestCase {
         waitForComposer()
         open("Usage")
         need("usage-refresh")
-        need("provider-claude", timeout: 40)
+        needAnywhere("provider-claude", timeout: 40)
         element("usage-refresh").tap()
-        need("usage-age", timeout: 60)
+        needAnywhere("usage-age", timeout: 60)
         XCTAssertFalse(element("usage-error").exists, "Refresh made Usage fail")
         snap("usage-refreshed")
     }

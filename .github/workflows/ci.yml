@@ -121,6 +121,12 @@ jobs:
           UDID: ${{ steps.sim.outputs.udid }}
         run: |
           set +x
+          # The tests compare the version Settings shows with project.yml.
+          want_version="$(sed -n 's/^ *MARKETING_VERSION: *"\{0,1\}\([^"]*\)"\{0,1\} *$/\1/p' project.yml | head -1)"
+          echo "project.yml marketing version: $want_version"
+          test -n "$want_version"
+          TEST_RUNNER_AGNVIEW_EXPECT_VERSION="$want_version"
+          export TEST_RUNNER_AGNVIEW_EXPECT_VERSION
           xcodebuild test \
             -scheme AgnView \
             -destination "platform=iOS Simulator,id=$UDID" \
@@ -145,6 +151,15 @@ jobs:
           echo "built    version=$got_version build=$got_build"
           if [ -z "$want_version" ] || [ -z "$want_build" ]; then
             echo "FAIL: could not read project defaults"
+            exit 1
+          fi
+          # A plain marketing version and a whole build number, no leading v.
+          if ! printf '%s' "$want_version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "FAIL: project.yml MARKETING_VERSION is not a plain x.y.z version: $want_version"
+            exit 1
+          fi
+          if ! printf '%s' "$want_build" | grep -Eq '^[0-9]+$'; then
+            echo "FAIL: project.yml CURRENT_PROJECT_VERSION is not a whole number: $want_build"
             exit 1
           fi
           case "$got_version$got_build" in

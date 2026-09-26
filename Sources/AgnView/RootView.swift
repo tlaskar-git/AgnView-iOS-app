@@ -13,7 +13,7 @@ struct RootView: View {
     var body: some View {
         layout
             .environmentObject(nav)
-            .tint(Theme.action)
+            .tint(Theme.link)
             .sheet(isPresented: $nav.showPairing) {
                 PairingSheet()
                     .environmentObject(model)
@@ -33,14 +33,20 @@ struct RootView: View {
                 }
                 .navigationTitle("AgnView")
             } detail: {
-                ScreenRouter(screen: nav.screen)
+                // The detail column is its own stack, so every screen gets a
+                // large title and a toolbar like a tab does on iPhone.
+                NavigationStack {
+                    ScreenRouter(screen: nav.screen)
+                }
             }
         } else {
             TabView(selection: $nav.screen) {
                 ForEach(Screen.allCases) { screen in
-                    ScreenRouter(screen: screen)
-                        .tabItem { Label(screen.title, systemImage: screen.symbol) }
-                        .tag(screen)
+                    NavigationStack {
+                        ScreenRouter(screen: screen)
+                    }
+                    .tabItem { Label(screen.title, systemImage: screen.symbol) }
+                    .tag(screen)
                 }
             }
         }

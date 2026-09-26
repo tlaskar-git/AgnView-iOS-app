@@ -6,55 +6,50 @@ struct SessionsView: View {
     @State private var refreshing = false
 
     var body: some View {
-        ScreenChrome(screen: .sessions, onRefresh: { await model.refreshSessionsNow() }) {
-            VStack(alignment: .leading, spacing: Theme.spacing) {
-                HStack(alignment: .center) {
+        ScreenChrome(screen: .sessions, trailing: { refreshButton }) {
+            List {
+                BannerSection()
+                Section {
                     TimelineView(.periodic(from: .now, by: 15)) { context in
                         Text(Format.updated(from: model.sessionsUpdatedAt, to: context.date))
-                            .font(.footnote)
-                            .foregroundStyle(Theme.textSecondary)
                             .accessibilityIdentifier("sessions-updated")
                     }
-                    Spacer()
-                    PillButton(title: "Refresh", symbol: "arrow.clockwise",
-                               identifier: "sessions-refresh", busy: refreshing) {
-                        Task {
-                            refreshing = true
-                            await model.refreshSessionsNow()
-                            refreshing = false
-                        }
-                    }
+                    .captionRow()
                 }
                 if let notice = model.sessionsNotice {
-                    Banner(kind: .info, text: notice, identifier: "sessions-notice")
-                }
-                if let message = model.sessionsState.failureMessage {
-                    PanelErrorCard(message: message, prefix: "sessions") {
-                        Task { await model.retrySessions() }
+                    Section {
+                        Banner(kind: .info, text: notice, identifier: "sessions-notice", card: false)
                     }
                 }
-                if model.sessions.isEmpty {
-                    Text("No sessions yet.")
-                        .font(.body)
-                        .foregroundStyle(Theme.textSecondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .card()
-                        .accessibilityIdentifier("sessions-empty")
-                } else {
-                    ForEach(model.sessions) { session in
-                        Button {
-                            model.setAgentFilter(session.agent)
-                            nav.screen = .console
-                        } label: {
-                            SessionRow(session: session, firstLine: firstLine(for: session))
+                if let message = model.sessionsState.failureMessage {
+                    Section {
+                        PanelErrorCard(message: message, prefix: "sessions", inList: true) {
+                            Task { await model.retrySessions() }
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityHint("Opens the console for this agent")
-                        .accessibilityIdentifier("session-row")
+                    }
+                }
+                Section {
+                    if model.sessions.isEmpty {
+                        Text("No sessions yet.")
+                            .foregroundStyle(Theme.textSecondary)
+                            .frame(minHeight: Theme.minTap, alignment: .leading)
+                            .accessibilityIdentifier("sessions-empty")
+                    } else {
+                        ForEach(model.sessions) { session in
+                            Button {
+                                model.setAgentFilter(session.agent)
+                                nav.screen = .console
+                            } label: {
+                                SessionRow(session: session, firstLine: firstLine(for: session))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Opens the console for this agent")
+                            .accessibilityIdentifier("session-row")
+                        }
                     }
                 }
             }
-            .padding(.bottom, 16)
+            .refreshable { await model.refreshSessionsNow() }
         }
         .task(id: model.connection.isOnline) {
             while !Task.isCancelled {
@@ -62,6 +57,26 @@ struct SessionsView: View {
                 try? await Task.sleep(nanoseconds: 10_000_000_000)
             }
         }
+    }
+
+    private var refreshButton: some View {
+        Button {
+            Task {
+                refreshing = true
+                await model.refreshSessionsNow()
+                refreshing = false
+            }
+        } label: {
+            if refreshing {
+                ProgressView()
+            } else {
+                Label("Refresh", systemImage: "arrow.clockwise")
+                    .labelStyle(.iconOnly)
+            }
+        }
+        .disabled(refreshing)
+        .accessibilityLabel("Refresh")
+        .accessibilityIdentifier("sessions-refresh")
     }
 
     private func firstLine(for session: SessionInfo) -> String {
@@ -92,14 +107,14 @@ struct SessionRow: View {
             HStack {
                 Text(Format.agentName(session.agent ?? ""))
                     .font(.headline)
-                    .foregroundStyle(Theme.textMain)
+                    .foregroundStyle(.primary)
                 Spacer()
                 StatusPill(text: session.busy ? "Busy" : "Idle",
                            tint: session.busy ? Theme.success : Theme.textSecondary)
             }
             Text(firstLine)
                 .font(.subheadline)
-                .foregroundStyle(Theme.textMain)
+                .foregroundStyle(.primary)
                 .lineLimit(2)
             if let age {
                 Text(age)
@@ -107,8 +122,8 @@ struct SessionRow: View {
                     .foregroundStyle(Theme.textSecondary)
             }
         }
-        .frame(minHeight: Theme.minTap)
-        .card()
+        .frame(maxWidth: .infinity, minHeight: Theme.minTap, alignment: .leading)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
 }

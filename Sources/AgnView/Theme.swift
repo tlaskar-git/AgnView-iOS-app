@@ -19,15 +19,23 @@ extension Color {
     }
 }
 
-/// Palette, radii and spacing taken from the approved mockup.
+/// Palette, radii and spacing. Surfaces and text follow the system semantic
+/// colours, so light and dark, Increase Contrast and grouped lists look native.
+/// The status colours are tuned to meet WCAG AA (4.5:1) on those surfaces in
+/// both appearances.
 enum Theme {
-    static let page = Color(light: 0xF6F7F9, dark: 0x101216)
-    static let surface = Color(light: 0xFFFFFF, dark: 0x191D24)
-    static let raised = Color(light: 0xEEF1F5, dark: 0x242A34)
-    static let border = Color(light: 0xD8DEE7, dark: 0x344050)
-    static let textMain = Color(light: 0x18212F, dark: 0xF3F4F6)
+    static let page = Color(uiColor: .systemGroupedBackground)
+    static let surface = Color(uiColor: .secondarySystemGroupedBackground)
+    static let raised = Color(uiColor: .tertiarySystemFill)
+    static let border = Color(uiColor: .separator)
+    static let textMain = Color.primary
+    /// Secondary text. The system secondary label drops under 4.5:1 on the
+    /// grouped background in light mode, so this keeps a fixed pair.
     static let textSecondary = Color(light: 0x526071, dark: 0xADB7C6)
+    /// The fill behind white button text.
     static let action = Color(light: 0x1D4ED8, dark: 0x2563EB)
+    /// Tint for links, menus and text buttons on the page background.
+    static let link = Color(light: 0x1D4ED8, dark: 0x60A5FA)
     static let success = Color(light: 0x047857, dark: 0x6EE7B7)
     static let warning = Color(light: 0x92400E, dark: 0xFCD34D)
     static let error = Color(light: 0xB91C1C, dark: 0xFCA5A5)

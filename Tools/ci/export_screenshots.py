@@ -14,8 +14,10 @@ import sys
 # screens, four error states, onboarding and the pairing sheet (16), then the
 # console with the keyboard toolbar, the attach sheet, the New pipeline sheet
 # and Sessions after Refresh (4), plus the iroh model menu (all agents and
-# Codex specifically) and the New pipeline sheet on a newer hub over iroh (3).
-EXPECTED_PER_DEVICE = 23
+# Codex specifically) and the New pipeline sheet on a newer hub over iroh (3),
+# then the Console filter menu, the Console agent menu, and the dark Console
+# and dark Settings (4).
+EXPECTED_PER_DEVICE = 27
 
 
 def main():

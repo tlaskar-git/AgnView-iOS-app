@@ -28,8 +28,13 @@ final class AgnViewUITests: XCTestCase {
 
     /// Launches the app. `mock` pairs the mock hub over LAN. `state` forces a
     /// connection state without a hub. With neither, the app starts unpaired.
-    private func launch(mock: Bool = false, state: String? = nil) {
+    /// `appearance` is system, light or dark.
+    private func launch(mock: Bool = false, state: String? = nil, appearance: String? = nil) {
         app = XCUIApplication()
+        if let appearance {
+            // The app reads its appearance choice from the "appearance" default.
+            app.launchArguments += ["-appearance", appearance]
+        }
         if mock {
             let hub = ProcessInfo.processInfo.environment["AGNVIEW_MOCK_HUB_URL"] ?? "http://127.0.0.1:18081"
             app.launchEnvironment["AGNVIEW_MOCK_HUB_URL"] = hub
@@ -84,6 +89,49 @@ final class AgnViewUITests: XCTestCase {
         return nil
     }
 
+    /// An item of the menu that is open. Picker items in a menu show as
+    /// buttons on some systems and as menu items on others.
+    private func menuOption(_ name: String, timeout: TimeInterval = 10) -> XCUIElement {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if app.buttons[name].exists { return app.buttons[name] }
+            if app.menuItems[name].exists { return app.menuItems[name] }
+            Thread.sleep(forTimeInterval: 0.25)
+        } while Date() < deadline
+        return app.buttons[name]
+    }
+
+    /// Opens the agent menu in the composer and picks one agent.
+    private func chooseAgent(_ id: String, name: String) {
+        need("composer-agent")
+        element("composer-agent").tap()
+        let byId = element("composer-agent-option-" + id)
+        if byId.waitForExistence(timeout: 5) {
+            byId.tap()
+            return
+        }
+        let byName = menuOption(name)
+        XCTAssertTrue(byName.exists, "the agent menu never offered \(name)")
+        byName.tap()
+    }
+
+    /// Finds an element in a list. A list builds only the rows near the
+    /// screen, so this scrolls down and then back up until the element exists.
+    private func findAnywhere(_ id: String, timeout: TimeInterval = 20) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if element(id).waitForExistence(timeout: 3) { return true }
+            for _ in 0..<8 where !element(id).exists { app.swipeUp() }
+            if element(id).exists { return true }
+            for _ in 0..<8 where !element(id).exists { app.swipeDown() }
+        } while Date() < deadline && !element(id).exists
+        return element(id).exists
+    }
+
+    private func needAnywhere(_ id: String, timeout: TimeInterval = 20) {
+        XCTAssertTrue(findAnywhere(id, timeout: timeout), "\(id) missing")
+    }
+
     private func tapNav(_ name: String) {
         if isPad {
             // The identifier is shared by the cell and its children, so pick a hittable match.
@@ -131,7 +179,7 @@ final class AgnViewUITests: XCTestCase {
                                "status line never showed the healthy mock hub")
             }
             if key == "usage" {
-                need("provider-claude")
+                needAnywhere("provider-claude")
             }
             snap(key)
         }
@@ -142,7 +190,7 @@ final class AgnViewUITests: XCTestCase {
         open("Settings")
         need("machine-row")
         need("add-machine")
-        need("appearance-picker")
+        needAnywhere("appearance-picker")
         snap("state-settings-machines")
     }
 
@@ -161,8 +209,8 @@ final class AgnViewUITests: XCTestCase {
         launch(state: "iroh")
         open("Usage")
         need("usage-notice")
-        need("provider-claude")
-        need("usage-age")
+        needAnywhere("provider-claude")
+        needAnywhere("usage-age")
         snap("state-usage-offlan")
     }
 
@@ -199,18 +247,18 @@ final class AgnViewUITests: XCTestCase {
         open("Console")
         need("composer-model")
         element("composer-model").tap()
-        let large = app.buttons["Example Large"]
-        XCTAssertTrue(large.waitForExistence(timeout: 10), "the kept model list never reached the menu")
-        XCTAssertTrue(app.buttons["Example Small"].exists)
+        let large = menuOption("Example Large")
+        XCTAssertTrue(large.exists, "the kept model list never reached the menu")
+        XCTAssertTrue(menuOption("Example Small", timeout: 3).exists)
         snap("state-iroh-model-menu")
         large.tap()
         XCTAssertEqual(element("composer-model").value as? String, "Example Large")
-        element("composer-agent-codex").tap()
+        chooseAgent("codex", name: "Codex")
         element("composer-model").tap()
-        XCTAssertTrue(app.buttons["Example Codex"].waitForExistence(timeout: 10), "the Codex list is missing")
-        XCTAssertTrue(app.buttons["Example Mini"].exists)
+        XCTAssertTrue(menuOption("Example Codex").exists, "the Codex list is missing")
+        XCTAssertTrue(menuOption("Example Mini", timeout: 3).exists)
         snap("state-iroh-model-menu-codex")
-        app.buttons["Example Mini"].tap()
+        menuOption("Example Mini").tap()
     }
 
     func testOffLANSessions() throws {
@@ -319,8 +367,8 @@ final class AgnViewUITests: XCTestCase {
         var picked = false
         for _ in 0..<6 where !picked {
             element("composer-model").tap()
-            let large = app.buttons["Example Large"]
-            if large.waitForExistence(timeout: 5) {
+            let large = menuOption("Example Large", timeout: 5)
+            if large.exists {
                 large.tap()
                 picked = true
             } else {
@@ -331,8 +379,8 @@ final class AgnViewUITests: XCTestCase {
         }
         XCTAssertTrue(picked, "the hub model list never reached the menu")
         element("composer-effort").tap()
-        let low = app.buttons["Low Effort"]
-        XCTAssertTrue(low.waitForExistence(timeout: 10), "the hub effort list never reached the menu")
+        let low = menuOption("Low Effort")
+        XCTAssertTrue(low.exists, "the hub effort list never reached the menu")
         low.tap()
         XCTAssertTrue(element("composer-model").label.contains("Model"))
         XCTAssertEqual(element("composer-effort").value as? String, "Low")
@@ -404,25 +452,86 @@ final class AgnViewUITests: XCTestCase {
     func testUsageShowsWindowsFromTheHub() throws {
         launch(mock: true)
         open("Usage")
-        need("provider-antigravity", timeout: 30)
+        needAnywhere("provider-antigravity", timeout: 40)
         need("usage-refresh")
-        need("usage-window")
-        need("usage-breakdown")
-        need("usage-source")
+        needAnywhere("usage-window")
+        needAnywhere("usage-breakdown")
+        needAnywhere("usage-source")
         let five = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Five Hour Limit'")).firstMatch
+        if !five.exists { _ = findAnywhere("usage-window") }
         XCTAssertTrue(five.waitForExistence(timeout: 10))
         XCTAssertTrue(five.label.contains("91% used"))
         element("usage-refresh").tap()
-        need("usage-age")
+        needAnywhere("usage-age")
     }
 
     func testSettingsShowsTheVersionWithoutABuildNumber() throws {
         launch(mock: true)
         open("Settings")
-        need("app-version")
+        needAnywhere("app-version")
         let label = element("app-version").label
         XCTAssertTrue(label.hasPrefix("Version "), "version line reads: \(label)")
         XCTAssertFalse(label.contains("("), "the build number must not show: \(label)")
+        XCTAssertNotNil(label.range(of: #"^Version [0-9]+\.[0-9]+\.[0-9]+$"#, options: .regularExpression),
+                        "the version line is not a plain marketing version: \(label)")
+        // CI passes the version from project.yml, so Settings must show that one.
+        if let want = ProcessInfo.processInfo.environment["AGNVIEW_EXPECT_VERSION"], !want.isEmpty {
+            XCTAssertEqual(label, "Version " + want, "Settings does not show the project version")
+        }
+        // The build number is its own row and never part of the version line.
+        needAnywhere("app-build")
+        XCTAssertNotNil(element("app-build").label.range(of: #"^Build [0-9]+$"#, options: .regularExpression),
+                        "build row reads: \(element("app-build").label)")
+    }
+
+    /// The agent filter is a menu in the navigation bar and the composer picks
+    /// its agent from a menu. Every name shows in full.
+    func testConsoleFilterAndAgentMenus() throws {
+        launch(mock: true)
+        open("Console")
+        need("console-filter")
+        element("console-filter").tap()
+        let option = menuOption("AntiGravity")
+        XCTAssertTrue(option.exists, "the filter menu never offered AntiGravity")
+        XCTAssertTrue(menuOption("DeepSeek", timeout: 3).exists, "the filter menu has no DeepSeek")
+        snap("console-filter-menu")
+        option.tap()
+        need("filter-summary")
+        XCTAssertTrue(element("filter-summary").label.contains("AntiGravity"), "the filter is not shown")
+        element("console-filter").tap()
+        let all = menuOption("All agents")
+        XCTAssertTrue(all.exists, "the filter menu has no All option")
+        all.tap()
+        XCTAssertFalse(element("filter-summary").exists, "the filter stayed on")
+
+        let prompt = element("composer-prompt")
+        XCTAssertTrue(prompt.waitForExistence(timeout: 30))
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"),
+                                                object: prompt)
+        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed)
+        need("composer-agent")
+        element("composer-agent").tap()
+        let agent = menuOption("AntiGravity")
+        XCTAssertTrue(agent.exists, "the agent menu never offered AntiGravity")
+        snap("console-agent-menu")
+        agent.tap()
+        XCTAssertEqual(element("composer-agent").value as? String, "AntiGravity")
+    }
+
+    /// Console and Settings in the dark appearance.
+    func testDarkAppearanceConsoleAndSettings() throws {
+        launch(mock: true, appearance: "dark")
+        open("Console")
+        let line = element("status-line")
+        need("status-line")
+        let healthy = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label CONTAINS 'healthy'"), object: line)
+        XCTAssertEqual(XCTWaiter().wait(for: [healthy], timeout: 20), .completed,
+                       "status line never showed the healthy mock hub")
+        snap("dark-console")
+        open("Settings")
+        need("machine-row")
+        snap("dark-settings")
     }
 
     func testRelayOnlyState() throws {
