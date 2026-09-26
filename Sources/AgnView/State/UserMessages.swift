@@ -9,7 +9,15 @@ enum UserMessages {
     static let removedFromPhone = "Removed from this phone. The key stays valid on the hub until you regenerate it there."
     static let sessionsFromLog = "Showing sessions seen in the log stream"
     static let hubNeedsUpdate = "Your hub does not support remote access yet. Update AgnView on your computer to 0.1.12 or later."
-    static let needsSameWiFi = "This needs the same Wi-Fi as your computer. Pipelines can be read here, but not created."
+    /// A hub that serves the mobile API over iroh but does not list "uploads"
+    /// in its hello: hub 0.1.12, or a newer hub with iroh uploads turned off.
+    static let needsSameWiFi = "Creating pipelines away from your Wi-Fi needs AgnView 0.1.13 or later on your computer, with phone uploads over iroh turned on. On the same Wi-Fi it works now."
+    /// The attach picker over iroh: the hub lists its files on the LAN only.
+    static let computerFilesNeedSameWiFi = "Files on your computer can be listed on the same Wi-Fi as your computer only."
+    /// The Model menu over iroh before the phone has ever read the hub's list.
+    static let modelsNeedSameWiFi = "The model list loads the first time you connect on the same Wi-Fi as your computer. Default lets the hub pick."
+    /// The Model menu for an agent the hub lists no models for.
+    static let noNamedModels = "The hub lists no models for this agent. Default lets the hub pick."
     static let offlineHub = "Can't reach this hub. Check that AgnView is running on your computer."
 
     static func lanBanner(_ reason: LANUnavailableReason) -> String {

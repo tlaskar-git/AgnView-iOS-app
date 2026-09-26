@@ -76,9 +76,12 @@ final class AppModel: ObservableObject {
     @Published private(set) var sessionsState: PanelState<[SessionInfo]> = .loading
     /// The last console send. Nil before the first send.
     @Published private(set) var dispatchState: PanelState<DispatchResponse>?
-    /// The model and effort lists from the hub. Empty until the hub answers,
-    /// and always empty over iroh, where the hub offers no such call.
+    /// The model and effort lists from the hub. Empty until the hub answers.
+    /// Over iroh the hub offers no such call, so the copy kept from the last
+    /// LAN session with this hub is used.
     @Published private(set) var catalogue: HubCatalogue = .empty
+    /// Where `catalogue` came from.
+    @Published private(set) var catalogueOrigin: CatalogueOrigin = .none
     /// What this build can use of the hub. Phase A: no phone uploads, no
     /// per-task model and effort.
     @Published var features: HubFeatures = .phaseA
@@ -144,6 +147,20 @@ final class AppModel: ObservableObject {
         return UserMessages.hubNeedsUpdate
     }
 
+    /// A line for the Model menu when it holds Default only, so a short menu
+    /// never looks broken. Nil when the hub listed models for the agent, or
+    /// while a LAN read is still on its way.
+    func modelMenuNote(for agent: String) -> String? {
+        guard !catalogue.hasNamedModels(for: agent) else { return nil }
+        switch catalogueOrigin {
+        case .hub, .stored:
+            return UserMessages.noNamedModels
+        case .none:
+            guard connection.isOnline, !capabilities.contains(.catalogue) else { return nil }
+            return UserMessages.modelsNeedSameWiFi
+        }
+    }
+
     var dispatchNotice: String? {
         guard connection.isOnline, !canDispatch else { return nil }
         return UserMessages.hubNeedsUpdate
@@ -171,6 +188,7 @@ final class AppModel: ObservableObject {
     private let now: () -> Date
     private let makeLadder: (HubEndpoint, Clock, Int?) -> ConnectionLadder
     private let makeClient: (HubEndpoint) -> HubClient
+    private let catalogueCache: CatalogueCache
 
     private var buffer: [ConsoleLine] = []
     private var seenIds: Set<Int> = []
@@ -211,6 +229,7 @@ final class AppModel: ObservableObject {
          makeLadder: @escaping (HubEndpoint, Clock, Int?) -> ConnectionLadder = AppModel.defaultLadder,
          makeClient: @escaping (HubEndpoint) -> HubClient = { HubClient(endpoint: $0) }) {
         self.store = HubStore(secrets: secrets, directory: directory)
+        self.catalogueCache = CatalogueCache(directory: directory)
         self.clock = clock
         self.now = now
         self.makeLadder = makeLadder
@@ -305,6 +324,7 @@ final class AppModel: ObservableObject {
         } catch {
             return
         }
+        catalogueCache.remove(hubId: id)
         syncFromStore()
         notice = UserMessages.removedFromPhone
         if wasActive {
@@ -482,13 +502,37 @@ final class AppModel: ObservableObject {
 
     // MARK: Composer catalogue, files and pipelines
 
+    /// Reads the model and effort lists from the hub on the LAN and keeps a
+    /// copy for this hub. Without the call (iroh) it uses that copy.
     func refreshCatalogue() async {
         guard canAttachFromComputer, let client else {
-            if !capabilities.contains(.catalogue) { catalogue = .empty }
+            if !capabilities.contains(.catalogue) { useStoredCatalogue() }
             return
         }
         let gen = generation
-        if let fresh = try? await client.capabilities(), gen == generation { catalogue = fresh }
+        let hubId = activeHub?.id
+        let fresh = try? await client.capabilities()
+        guard gen == generation else { return }
+        if let fresh {
+            catalogue = fresh
+            catalogueOrigin = .hub
+            if let hubId { catalogueCache.save(fresh, for: hubId) }
+        } else if catalogueOrigin == .none {
+            useStoredCatalogue()
+        }
+    }
+
+    /// Reads the lists again when the chosen agent has none yet, so a list
+    /// that arrives late still reaches the menu.
+    func refreshCatalogueIfMissing(for agent: String) async {
+        guard catalogueOrigin != .hub || !catalogue.hasNamedModels(for: agent) else { return }
+        await refreshCatalogue()
+    }
+
+    private func useStoredCatalogue() {
+        let stored = activeHub.flatMap { catalogueCache.catalogue(for: $0.id) }
+        catalogue = stored ?? .empty
+        catalogueOrigin = stored == nil ? .none : .stored
     }
 
     /// The files on the computer that can be attached.
@@ -569,6 +613,7 @@ final class AppModel: ObservableObject {
         sessionsState = .loading
         dispatchState = nil
         catalogue = .empty
+        catalogueOrigin = .none
         sessionsUpdatedAt = nil
         statusLine = "No hub connected"
     }
@@ -666,6 +711,8 @@ final class AppModel: ObservableObject {
         relayOnly = viaIrohOnly
         let route = session.route
         connection = .online(route, session.capabilities)
+        // The kept lists fill the menus at once. A LAN read replaces them.
+        if catalogueOrigin == .none { useStoredCatalogue() }
         if session.capabilities.contains(.usage) {
             statusLine = "Connected to \(activeHub?.name ?? "the hub")"
             let gen = generation
@@ -800,7 +847,8 @@ extension AppModel {
     /// Builds the model for UI tests. Returns nil when no debug variable is set.
     /// AGNVIEW_MOCK_HUB_URL pairs the mock hub and connects over LAN.
     /// AGNVIEW_FORCE_STATE puts the model in a fixed state without a hub:
-    /// offline, authFailed, keyRevoked, relayOnly or iroh.
+    /// offline, authFailed, keyRevoked, relayOnly, iroh (console only) or
+    /// irohJobs (the mobile API with pipeline create, hub 0.1.13 or later).
     static func debugLaunchModel() -> AppModel? {
         let env = ProcessInfo.processInfo.environment
         let forced = env["AGNVIEW_FORCE_STATE"].flatMap { $0.isEmpty ? nil : $0 }
@@ -847,7 +895,7 @@ extension AppModel {
 
     /// Returns true when the state name is known and applied.
     func applyForcedState(_ name: String) -> Bool {
-        let states = ["offline", "authFailed", "keyRevoked", "relayOnly", "iroh"]
+        let states = ["offline", "authFailed", "keyRevoked", "relayOnly", "iroh", "irohJobs"]
         guard states.contains(name) else { return false }
         if hubs.isEmpty {
             _ = try? store.add(payload: AppModel.placeholderPayload)
@@ -864,6 +912,8 @@ extension AppModel {
             connection = .authFailed
         case "keyRevoked":
             connection = .keyRevoked
+        case "irohJobs":
+            applyForcedIrohJobs()
         default:
             resetHubData()
             connection = .online(.direct, .iroh)
@@ -892,6 +942,33 @@ extension AppModel {
             }
         }
         return true
+    }
+
+    /// An iroh relay session to a hub 0.1.13 or later: the mobile API with
+    /// pipeline create and delete, and the model lists kept from a LAN session.
+    private func applyForcedIrohJobs() {
+        resetHubData()
+        connection = .online(.relay, .irohJobs)
+        capabilities = .irohJobs
+        relayOnly = false
+        statusLine = "Connected through iroh (relay)"
+        let option = { (id: String, name: String) in ChoiceOption(id: id, name: name) }
+        var stored = HubCatalogue()
+        stored.models = [
+            "claude_code": [option("example-large", "Example Large"), option("example-small", "Example Small")],
+            "codex": [option("example-codex", "Example Codex"), option("example-mini", "Example Mini")],
+            "antigravity": [option("example-flash", "Example Flash"), option("example-pro", "Example Pro")],
+        ]
+        stored.efforts = [
+            "claude_code": [option("default", "Default"), option("low", "Low Effort"), option("high", "High Effort")],
+        ]
+        stored.plainEfforts = HubCatalogue.documentedEfforts
+        catalogue = stored
+        catalogueOrigin = .stored
+        jobs = []
+        jobsState = .loaded([])
+        sessions = []
+        sessionsState = .loaded([])
     }
 }
 

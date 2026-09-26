@@ -2,23 +2,39 @@ import Foundation
 
 /// What a connected session can do. LAN gives the full HTTP API. iroh gives
 /// the console log stream, and the mobile API too when the hub says so in its
-/// hello frame (hub 0.1.12 or later).
+/// hello frame (hub 0.1.12 or later), with pipeline create and delete from hub
+/// 0.1.13.
 enum Capability: Hashable, CaseIterable {
     case consoleStream
     case dispatch
     case usage
     case jobs
     case sessions
-    /// GET /api/system/capabilities and /api/system/files. Hub 0.1.12 serves
-    /// them on the LAN only, so an iroh session does not have this one.
+    /// GET /api/system/capabilities and /api/system/files. Hubs up to 0.1.14
+    /// serve them on the LAN only, so an iroh session does not have this one.
     case catalogue
-    /// POST /api/jobs and DELETE /api/jobs/{id}. LAN only in hub 0.1.12.
+    /// POST /api/jobs and DELETE /api/jobs/{id}. LAN only in hub 0.1.12. Hub
+    /// 0.1.13 added both to the iroh allowlist, see `Capability.irohJobs`.
     case manageJobs
-    /// POST /api/usage/refresh-all. LAN only in hub 0.1.12.
+    /// POST /api/usage/refresh-all. LAN only on every hub so far.
     case usageRefresh
 
-    /// The capabilities the hub allowlist for iroh does not include.
+    /// The capabilities the hub 0.1.12 allowlist for iroh does not include.
     static let lanOnly: Set<Capability> = [.catalogue, .manageJobs, .usageRefresh]
+}
+
+/// The names a hub puts in the hello frame's `capabilities` list.
+enum HelloCapability {
+    static let console = "console"
+    /// The mobile API over iroh (hub 0.1.12 or later).
+    static let api = "api"
+    /// Phone uploads over iroh. Hub 0.1.13 added this name in the same release
+    /// that put POST /api/jobs and DELETE /api/jobs/{id} on the iroh
+    /// allowlist. The hub sends no version and no separate pipelines flag, so
+    /// this name is the signal that the hub can create and delete pipelines
+    /// over iroh. A hub that lists "api" without it is treated as 0.1.12:
+    /// pipelines are created on the LAN only.
+    static let uploads = "uploads"
 }
 
 /// The rung a session landed on.
@@ -108,6 +124,16 @@ extension Set where Element == Capability {
     static var lan: Set<Capability> { Set(Capability.allCases) }
     /// Console only: an iroh session to a hub without the remote API.
     static var iroh: Set<Capability> { [.consoleStream] }
-    /// An iroh session to a hub that serves the mobile API.
+    /// An iroh session to a hub that serves the mobile API (hub 0.1.12).
     static var irohAPI: Set<Capability> { Set(Capability.allCases).subtracting(Capability.lanOnly) }
+    /// An iroh session to a hub that also creates and deletes pipelines over
+    /// iroh (hub 0.1.13 or later).
+    static var irohJobs: Set<Capability> { irohAPI.union([.manageJobs]) }
+
+    /// What an iroh session can do, read from the hello frame's list.
+    static func irohGranted(hello names: [String]?) -> Set<Capability> {
+        let names = Set(names ?? [])
+        guard names.contains(HelloCapability.api) else { return .iroh }
+        return names.contains(HelloCapability.uploads) ? .irohJobs : .irohAPI
+    }
 }

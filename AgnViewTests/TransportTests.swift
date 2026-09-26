@@ -143,6 +143,25 @@ final class TransportTests: XCTestCase {
                                               .catalogue, .manageJobs, .usageRefresh])
         XCTAssertEqual(Set<Capability>.irohAPI, [.consoleStream, .dispatch, .usage, .jobs, .sessions])
         XCTAssertEqual(Set<Capability>.iroh, [.consoleStream])
+        XCTAssertEqual(Set<Capability>.irohJobs, [.consoleStream, .dispatch, .usage, .jobs, .sessions, .manageJobs])
+    }
+
+    /// Hub 0.1.12 says ["console", "api"]: pipelines are read over iroh and
+    /// created on the LAN only. Hub 0.1.13 or later adds "uploads" in the same
+    /// release that opened POST /api/jobs and DELETE /api/jobs/{id} to iroh.
+    func testIrohCapabilitiesComeFromTheHello() {
+        XCTAssertEqual(Set<Capability>.irohGranted(hello: nil), .iroh, "hub before 0.1.12")
+        XCTAssertEqual(Set<Capability>.irohGranted(hello: ["console"]), .iroh, "API mode off")
+        XCTAssertEqual(Set<Capability>.irohGranted(hello: ["console", "api"]), .irohAPI, "hub 0.1.12")
+        XCTAssertFalse(Set<Capability>.irohGranted(hello: ["console", "api"]).contains(.manageJobs))
+        XCTAssertEqual(Set<Capability>.irohGranted(hello: ["console", "api", "uploads"]), .irohJobs,
+                       "hub 0.1.13 or later")
+        XCTAssertEqual(Set<Capability>.irohGranted(hello: ["console", "uploads"]), .iroh,
+                       "uploads without api gives no API calls")
+        for granted in [Set<Capability>.irohAPI, .irohJobs] {
+            XCTAssertFalse(granted.contains(.catalogue), "no hub serves the model lists over iroh yet")
+            XCTAssertFalse(granted.contains(.usageRefresh))
+        }
     }
 
     func testLANStatusMapping() {

@@ -642,6 +642,18 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.usageSnapshot?.takenAt, nowBox.date.addingTimeInterval(-300))
     }
 
+    func testForcedIrohJobs() {
+        let model = forced("irohJobs")
+        XCTAssertEqual(model.connection, .online(.relay, .irohJobs))
+        XCTAssertTrue(model.canManageJobs)
+        XCTAssertNil(model.pipelineCreateNotice)
+        XCTAssertNil(model.jobsNotice)
+        XCTAssertNil(model.statusMessage)
+        XCTAssertEqual(model.catalogueOrigin, .stored)
+        XCTAssertGreaterThan(model.catalogue.modelOptions(for: "codex").count, 1)
+        XCTAssertNil(model.modelMenuNote(for: "claude_code"))
+    }
+
     func testUnknownForcedStateRunsNormally() async {
         let model = forced("not-a-state")
         XCTAssertEqual(model.connection, .offline(retryIn: nil))
@@ -657,17 +669,19 @@ final class AppModelTests: XCTestCase {
         StubURLProtocol.handler = { request in answer(request) ?? good?(request) ?? .response(404, Data()) }
     }
 
-    private func irohAPIModel(_ api: FakeAPITransport) async -> AppModel {
+    /// An iroh session with the mobile API. `.irohAPI` stands for hub 0.1.12,
+    /// `.irohJobs` for hub 0.1.13 or later.
+    private func irohAPIModel(_ api: FakeAPITransport, caps: Set<Capability> = .irohAPI) async -> AppModel {
         api.route("GET", "/api/mobile/status", 200, SampleJSON.status)
         api.route("GET", "/api/usage/accounts", 200, SampleJSON.usage)
         api.route("GET", "/api/jobs", 200, SampleJSON.jobs)
         api.route("GET", "/api/console/live-sessions", 200, SampleJSON.liveSessions)
         api.route("POST", "/api/console/dispatch", 200, SampleJSON.dispatch)
-        let session = ScriptedSession(route: .direct, capabilities: .irohAPI, api: api)
+        let session = ScriptedSession(route: .direct, capabilities: caps, api: api)
         let model = makeModel(lan: TransportScript([TransportScript.fail(.unreachable)]),
                               iroh: TransportScript([TransportScript.session(session)]))
         model.pair(url: pairingURL())
-        await waitForState(model, .online(.direct, .irohAPI))
+        await waitForState(model, .online(.direct, caps))
         return model
     }
 
@@ -711,7 +725,120 @@ final class AppModelTests: XCTestCase {
         }
         await model.refreshCatalogue()
         XCTAssertEqual(model.catalogue, .empty)
+        XCTAssertEqual(model.catalogueOrigin, .none)
         XCTAssertEqual(model.catalogue.effortOptions(for: "codex").map { $0.id }, ["", "low", "medium", "high"])
+        XCTAssertEqual(model.modelMenuNote(for: "claude_code"), UserMessages.modelsNeedSameWiFi,
+                       "a Default-only menu over iroh says why")
+    }
+
+    // MARK: Pipelines over iroh on hub 0.1.13 or later
+
+    func testNewerHubCreatesAndDeletesPipelinesOverIroh() async throws {
+        let api = FakeAPITransport()
+        api.route("POST", "/api/jobs", 200, phaseACreatedJob)
+        api.route("DELETE", "/api/jobs/job-new", 200, #"{"message":"deleted"}"#)
+        let model = await irohAPIModel(api, caps: .irohJobs)
+        XCTAssertTrue(model.canManageJobs)
+        XCTAssertNil(model.pipelineCreateNotice, "no Wi-Fi notice on a hub that creates over iroh")
+        XCTAssertNil(model.jobsNotice)
+        XCTAssertNil(model.lanUnavailableReason)
+        XCTAssertFalse(model.canAttachFromComputer, "the file list stays on the LAN")
+
+        let job = try await model.createPipeline(draft())
+        XCTAssertEqual(job.id, "job-new")
+        let post = try XCTUnwrap(api.calls.lastIndex { $0.method == "POST" && $0.path == "/api/jobs" })
+        let body = try XCTUnwrap(api.calls[post].body)
+        let sent = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(sent["title"] as? String, "Example pipeline")
+        XCTAssertTrue(api.calls[(post + 1)...].contains { $0.method == "GET" && $0.path == "/api/jobs" },
+                      "the list is read again over iroh after the create")
+
+        try await model.deletePipeline(id: "job-new")
+        XCTAssertTrue(api.calls.contains { $0.method == "DELETE" && $0.path == "/api/jobs/job-new" })
+        XCTAssertFalse(StubURLProtocol.requests.contains { $0.url.path.hasPrefix("/api/jobs") },
+                       "nothing went to the LAN")
+        XCTAssertEqual(model.connection, .online(.direct, .irohJobs))
+    }
+
+    func testOlderHubStillCreatesPipelinesOnTheLANOnly() async {
+        let api = FakeAPITransport()
+        let model = await irohAPIModel(api, caps: .irohAPI)
+        XCTAssertFalse(model.canManageJobs)
+        XCTAssertTrue(model.canActOnTasks)
+        XCTAssertNil(model.jobsNotice, "pipelines are still read over iroh")
+        XCTAssertEqual(model.pipelineCreateNotice, UserMessages.needsSameWiFi)
+        do {
+            try await model.deletePipeline(id: "job-1")
+            XCTFail("delete needs the LAN on hub 0.1.12")
+        } catch {
+            XCTAssertEqual(error as? HubError, .transport(.notSupported))
+        }
+        XCTAssertFalse(api.calls.contains { $0.method == "POST" && $0.path == "/api/jobs" })
+        XCTAssertFalse(api.calls.contains { $0.method == "DELETE" })
+    }
+
+    // MARK: Model lists kept from the LAN
+
+    private let lanCatalogueJSON = #"{"models":{"claude_code":[{"id":"example-large","name":"Example Large"}],"codex":[{"id":"example-codex","name":"Example Codex"},{"id":"example-mini","name":"Example Mini"}],"antigravity":[{"id":"example-flash","name":"Example Flash"}]},"efforts":["low","high"]}"#
+
+    func testModelListReadOnTheLANIsUsedLaterOverIroh() async throws {
+        let json = lanCatalogueJSON
+        stub { request in
+            request.url.path == "/api/system/capabilities" ? .response(200, Data(json.utf8)) : nil
+        }
+        let lanSession = ScriptedSession(route: .lan)
+        let first = makeModel(lan: TransportScript([TransportScript.session(lanSession)]))
+        await pairAndConnect(first, lanSession: lanSession)
+        await first.refreshCatalogue()
+        XCTAssertEqual(first.catalogueOrigin, .hub)
+        XCTAssertEqual(first.catalogue.modelOptions(for: "codex").map { $0.id }, ["", "example-codex", "example-mini"])
+        first.stop()
+
+        // Later, away from the Wi-Fi: the same hub over iroh.
+        let api = FakeAPITransport()
+        let model = await irohAPIModel(api, caps: .irohJobs)
+        await waitUntil("stored lists") { model.catalogueOrigin == .stored }
+        for agent in ["claude_code", "codex", "antigravity"] {
+            XCTAssertGreaterThan(model.catalogue.modelOptions(for: agent).count, 1, agent)
+            XCTAssertNil(model.modelMenuNote(for: agent), agent)
+        }
+        XCTAssertEqual(model.modelMenuNote(for: "deepseek"), UserMessages.noNamedModels)
+        XCTAssertFalse(api.calls.contains { $0.path == HubPath.capabilities },
+                       "the lists are not asked for over iroh, where the hub refuses them")
+        await model.refreshCatalogueIfMissing(for: "codex")
+        XCTAssertEqual(model.catalogueOrigin, .stored)
+    }
+
+    func testRemovingAHubDropsItsStoredModelList() async throws {
+        let json = lanCatalogueJSON
+        stub { request in
+            request.url.path == "/api/system/capabilities" ? .response(200, Data(json.utf8)) : nil
+        }
+        let lanSession = ScriptedSession(route: .lan)
+        let model = makeModel(lan: TransportScript([TransportScript.session(lanSession)]))
+        await pairAndConnect(model, lanSession: lanSession)
+        await model.refreshCatalogue()
+        let hubId = try XCTUnwrap(model.activeHub?.id)
+        XCTAssertNotNil(CatalogueCache(directory: dir).catalogue(for: hubId))
+        model.remove(hubId)
+        XCTAssertNil(CatalogueCache(directory: dir).catalogue(for: hubId))
+    }
+
+    func testAgentChangeReadsTheListAgainWhenItIsMissing() async {
+        let lanSession = ScriptedSession(route: .lan)
+        let model = makeModel(lan: TransportScript([TransportScript.session(lanSession)]))
+        await pairAndConnect(model, lanSession: lanSession)
+        await waitUntil("first read") {
+            StubURLProtocol.requests.contains { $0.url.path == "/api/system/capabilities" }
+        }
+        XCTAssertEqual(model.catalogueOrigin, .none, "the first read failed")
+        let json = lanCatalogueJSON
+        stub { request in
+            request.url.path == "/api/system/capabilities" ? .response(200, Data(json.utf8)) : nil
+        }
+        await model.refreshCatalogueIfMissing(for: "antigravity")
+        XCTAssertEqual(model.catalogueOrigin, .hub)
+        XCTAssertEqual(model.catalogue.modelOptions(for: "antigravity").map { $0.id }, ["", "example-flash"])
     }
 
     func testCatalogueLoadsOverLAN() async {

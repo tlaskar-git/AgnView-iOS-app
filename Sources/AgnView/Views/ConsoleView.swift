@@ -167,10 +167,29 @@ struct OptionMenu: View {
     let options: [ChoiceOption]
     let selectedId: String
     let identifier: String
+    /// A line under the options, such as why the list holds Default only.
+    var note: String? = nil
     let onSelect: (String) -> Void
+
+    init(title: String, symbol: String, options: [ChoiceOption], selectedId: String,
+         identifier: String, note: String? = nil, onSelect: @escaping (String) -> Void) {
+        self.title = title
+        self.symbol = symbol
+        self.options = options
+        self.selectedId = selectedId
+        self.identifier = identifier
+        self.note = note
+        self.onSelect = onSelect
+    }
 
     var body: some View {
         Menu {
+            if let note {
+                Section {
+                    Text(note)
+                        .accessibilityIdentifier(identifier + "-note")
+                }
+            }
             ForEach(options) { option in
                 Button {
                     onSelect(option.id)
@@ -224,7 +243,8 @@ struct ConsoleComposer: View {
     private func modelChip(_ prefix: String) -> some View {
         OptionMenu(title: ComposerSelection.chipText(modelOptions, selected: selection.modelId),
                    symbol: "cpu", options: modelOptions, selectedId: selection.modelId,
-                   identifier: prefix + "-model") { selection.modelId = $0 }
+                   identifier: prefix + "-model",
+                   note: model.modelMenuNote(for: selection.agent)) { selection.modelId = $0 }
     }
 
     private func effortChip(_ prefix: String) -> some View {
@@ -249,6 +269,7 @@ struct ConsoleComposer: View {
                         let chosen = selection.agent == item.id
                         Button {
                             selection.select(agent: item.id, catalogue: model.catalogue)
+                            Task { await model.refreshCatalogueIfMissing(for: item.id) }
                         } label: {
                             Text(item.name)
                                 .font(.subheadline.weight(.semibold))

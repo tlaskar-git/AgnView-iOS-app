@@ -159,6 +159,88 @@ final class PhaseADecodeTests: XCTestCase {
     func testAnAgentWithoutAListGetsDefaultOnlyForModels() throws {
         let catalogue = try catalogue()
         XCTAssertEqual(catalogue.modelOptions(for: "deepseek"), [ChoiceOption.hubDefault])
+        XCTAssertFalse(catalogue.hasNamedModels(for: "deepseek"))
+    }
+
+    // MARK: Catalogue from hub 0.1.14
+
+    /// The answer of GET /api/system/capabilities built from the hub 0.1.14
+    /// model and effort lists, with placeholder paths.
+    private static func catalogue014(_ name: String = "system_capabilities.json",
+                                     file: StaticString = #filePath) throws -> HubCatalogue {
+        let folder = URL(fileURLWithPath: "\(file)").deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/hub-0.1.14")
+        return try HubJSON.decodePlain(HubCatalogue.self, from: Data(contentsOf: folder.appendingPathComponent(name)))
+    }
+
+    func testHub014ListsNamedModelsForEveryAgentTheConsoleOffers() throws {
+        let catalogue = try Self.catalogue014()
+        let claude = catalogue.modelOptions(for: "claude_code")
+        XCTAssertEqual(claude.count, 13, "Default and twelve models")
+        XCTAssertEqual(claude.first, ChoiceOption.hubDefault)
+        XCTAssertTrue(claude.contains(ChoiceOption(id: "claude-opus-5", name: "Opus 5")))
+        let codex = catalogue.modelOptions(for: "codex")
+        XCTAssertEqual(codex.count, 11)
+        XCTAssertTrue(codex.contains(ChoiceOption(id: "gpt-5-codex", name: "GPT-5 Codex")))
+        let agy = catalogue.modelOptions(for: "antigravity")
+        XCTAssertEqual(agy.count, 10)
+        XCTAssertTrue(agy.contains(ChoiceOption(id: "gemini-2.5-pro", name: "Gemini 2.5 Pro")))
+        for agent in ["claude_code", "codex", "antigravity"] {
+            XCTAssertTrue(catalogue.hasNamedModels(for: agent), agent)
+            XCTAssertGreaterThan(catalogue.effortOptions(for: agent).count, 3, agent)
+        }
+        XCTAssertEqual(catalogue.effortOptions(for: "claude_code").map { $0.id },
+                       ["", "low", "medium", "high", "xhigh", "max"])
+        XCTAssertTrue(catalogue.hasNamedModels)
+    }
+
+    func testChangingAgentKeepsOnlyAModelTheNewAgentOffers() throws {
+        let catalogue = try Self.catalogue014()
+        var selection = ComposerSelection()
+        selection.modelId = "claude-opus-5"
+        selection.select(agent: "antigravity", catalogue: catalogue)
+        XCTAssertEqual(selection.modelId, "", "Opus 5 is not on the AntiGravity list")
+        selection.modelId = "claude-sonnet-4-6"
+        selection.select(agent: "claude_code", catalogue: catalogue)
+        XCTAssertEqual(selection.modelId, "claude-sonnet-4-6", "both agents list this id")
+        XCTAssertEqual(selection.modelValue, "claude-sonnet-4-6")
+    }
+
+    /// A hub whose lists hold only a default entry: the menu shows Default
+    /// alone, and the catalogue says it has no named models, which the screen
+    /// explains instead of looking empty.
+    func testDefaultOnlyListIsAValidState() throws {
+        let catalogue = try Self.catalogue014("system_capabilities_default_only.json")
+        XCTAssertEqual(catalogue.modelOptions(for: "claude_code"), [ChoiceOption.hubDefault])
+        XCTAssertEqual(catalogue.modelOptions(for: "codex"), [ChoiceOption.hubDefault])
+        XCTAssertFalse(catalogue.hasNamedModels(for: "claude_code"))
+        XCTAssertFalse(catalogue.hasNamedModels)
+        XCTAssertEqual(catalogue.effortOptions(for: "claude_code").map { $0.id }, ["", "low", "medium", "high"])
+        XCTAssertEqual(ComposerSelection.chipText(catalogue.modelOptions(for: "claude_code"), selected: ""), "Default")
+    }
+
+    func testStoredCatalogueReadsBackTheSame() throws {
+        let catalogue = try Self.catalogue014()
+        let data = try JSONEncoder().encode(catalogue)
+        var expected = catalogue
+        expected.currentDirectory = nil
+        XCTAssertEqual(try HubJSON.decodePlain(HubCatalogue.self, from: data), expected)
+    }
+
+    func testCatalogueCacheKeepsOneCopyPerHub() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("catalogue-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let catalogue = try Self.catalogue014()
+        let cache = CatalogueCache(directory: dir)
+        XCTAssertNil(cache.catalogue(for: "hub-a"))
+        cache.save(catalogue, for: "hub-a")
+        let again = CatalogueCache(directory: dir)
+        XCTAssertEqual(again.catalogue(for: "hub-a")?.modelOptions(for: "codex"), catalogue.modelOptions(for: "codex"))
+        XCTAssertNil(again.catalogue(for: "hub-a")?.currentDirectory, "the working folder is not kept")
+        XCTAssertNil(again.catalogue(for: "hub-b"))
+        again.remove(hubId: "hub-a")
+        XCTAssertNil(CatalogueCache(directory: dir).catalogue(for: "hub-a"))
     }
 
     func testEffortOptionsUseTheAgentListThenThePlainList() throws {

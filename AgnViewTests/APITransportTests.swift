@@ -204,6 +204,20 @@ final class APITransportTests: XCTestCase {
         await session.close()
     }
 
+    func testHelloWithUploadsAddsPipelineCreateAndDelete() async throws {
+        let reader = ChannelReader()
+        reader.send(#"{"type":"hello","app":"AgnView","protocol":1,"transport":"iroh-relay","capabilities":["console","api","uploads"]}"# + "\n")
+        let session = try await ConsoleStreamSession.open(
+            makeAPI: { IrohAPITransport(token: "k", openStream: { FakeAPIStream().io }) },
+            read: { await reader.read() }, onClose: {})
+        XCTAssertEqual(session.capabilities, .irohJobs)
+        XCTAssertTrue(session.capabilities.contains(.manageJobs))
+        XCTAssertNotNil(session.api)
+        XCTAssertEqual(session.route, .relay)
+        reader.end()
+        await session.close()
+    }
+
     func testHelloWithoutCapabilitiesKeepsConsoleOnly() async throws {
         let reader = ChannelReader()
         reader.send(#"{"type":"hello","app":"AgnView","protocol":1,"transport":"iroh-relay"}"# + "\n")

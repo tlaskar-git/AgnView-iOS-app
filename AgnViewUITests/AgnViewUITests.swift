@@ -173,6 +173,46 @@ final class AgnViewUITests: XCTestCase {
         snap("state-pipelines-offlan")
     }
 
+    /// Over iroh to a hub 0.1.13 or later: plus opens the New pipeline sheet
+    /// and no screen asks for the same Wi-Fi.
+    func testIrohPipelineCreateOnANewerHub() throws {
+        launch(state: "irohJobs")
+        open("Pipelines")
+        let plus = element("pipelines-new")
+        need("pipelines-new")
+        XCTAssertTrue(plus.isEnabled, "New pipeline is on over iroh with a newer hub")
+        XCTAssertFalse(element("pipelines-notice").exists)
+        XCTAssertFalse(element("pipelines-create-notice").exists)
+        plus.tap()
+        need("new-pipeline")
+        need("np-title")
+        XCTAssertFalse(element("np-notice").exists, "the sheet shows no Wi-Fi notice")
+        let wifi = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'Wi-Fi'")).firstMatch
+        XCTAssertFalse(wifi.exists, "no text asks for the same Wi-Fi")
+        XCTAssertTrue(element("np-create").isEnabled, "Create is on over iroh with a newer hub")
+        snap("state-iroh-new-pipeline")
+    }
+
+    /// Over iroh the Model menu lists the models kept from the LAN.
+    func testIrohModelMenuShowsTheKeptList() throws {
+        launch(state: "irohJobs")
+        open("Console")
+        need("composer-model")
+        element("composer-model").tap()
+        let large = app.buttons["Example Large"]
+        XCTAssertTrue(large.waitForExistence(timeout: 10), "the kept model list never reached the menu")
+        XCTAssertTrue(app.buttons["Example Small"].exists)
+        snap("state-iroh-model-menu")
+        large.tap()
+        XCTAssertEqual(element("composer-model").value as? String, "Example Large")
+        element("composer-agent-codex").tap()
+        element("composer-model").tap()
+        XCTAssertTrue(app.buttons["Example Codex"].waitForExistence(timeout: 10), "the Codex list is missing")
+        XCTAssertTrue(app.buttons["Example Mini"].exists)
+        snap("state-iroh-model-menu-codex")
+        app.buttons["Example Mini"].tap()
+    }
+
     func testOffLANSessions() throws {
         launch(state: "iroh")
         open("Sessions")

@@ -36,6 +36,16 @@ struct ChoiceOption: Equatable, Hashable, Identifiable {
     static let hubDefault = ChoiceOption(id: "", name: "Default")
 }
 
+/// Where the Model and Effort lists on screen came from.
+enum CatalogueOrigin: Equatable {
+    /// No list yet: the menus hold Default only.
+    case none
+    /// Read from the hub in this session.
+    case hub
+    /// The copy kept from an earlier LAN session with this hub.
+    case stored
+}
+
 /// The lists behind the Model and Effort menus, read from
 /// GET /api/system/capabilities. The hub keys both lists by agent id.
 struct HubCatalogue: Equatable {
@@ -141,6 +151,88 @@ extension HubCatalogue: Decodable {
             availableAgents = nil
         }
         currentDirectory = (try? c.decodeIfPresent(String.self, forKey: .currentCwd)) ?? nil
+    }
+}
+
+extension HubCatalogue: Encodable {
+    private struct OutItem: Encodable {
+        let id: String
+        let name: String
+    }
+
+    private struct OutInstalled: Encodable {
+        let id: String
+        let available: Bool
+    }
+
+    /// Writes the hub's own shape, so a stored copy reads back through the
+    /// decoder above. The working folder is left out: it is only used on the
+    /// LAN, where the hub answers fresh.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        let out: ([String: [ChoiceOption]]) -> [String: [OutItem]] = { lists in
+            lists.mapValues { $0.map { OutItem(id: $0.id, name: $0.name) } }
+        }
+        try c.encode(out(models), forKey: .models)
+        try c.encode(out(efforts), forKey: .effortsByProvider)
+        try c.encode(plainEfforts, forKey: .efforts)
+        if let availableAgents {
+            try c.encode(availableAgents.sorted().map { OutInstalled(id: $0, available: true) },
+                         forKey: .installedClis)
+        }
+    }
+
+    /// True when the hub gave at least one named model for some agent.
+    var hasNamedModels: Bool {
+        models.values.contains { list in list.contains { !$0.isDefault } }
+    }
+
+    /// True when the hub gave named models for this agent.
+    func hasNamedModels(for agent: String) -> Bool {
+        (models[agent] ?? []).contains { !$0.isDefault }
+    }
+}
+
+/// The last model and effort lists each hub gave on the LAN, kept on the
+/// phone. Hubs up to 0.1.14 do not serve GET /api/system/capabilities over
+/// iroh, so away from the Wi-Fi the menus use this copy.
+final class CatalogueCache {
+    private let fileURL: URL
+
+    init(directory: URL) {
+        fileURL = directory.appendingPathComponent("catalogues.json")
+    }
+
+    private func readAll() -> [String: HubCatalogue] {
+        guard let data = try? Data(contentsOf: fileURL),
+              let all = try? JSONDecoder().decode([String: HubCatalogue].self, from: data) else { return [:] }
+        return all
+    }
+
+    private func writeAll(_ all: [String: HubCatalogue]) {
+        let dir = fileURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        guard let data = try? JSONEncoder().encode(all) else { return }
+        try? data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+
+    func catalogue(for hubId: String) -> HubCatalogue? {
+        readAll()[hubId]
+    }
+
+    func save(_ catalogue: HubCatalogue, for hubId: String) {
+        var all = readAll()
+        var stored = catalogue
+        stored.currentDirectory = nil
+        guard all[hubId] != stored else { return }
+        all[hubId] = stored
+        writeAll(all)
+    }
+
+    func remove(hubId: String) {
+        var all = readAll()
+        guard all.removeValue(forKey: hubId) != nil else { return }
+        writeAll(all)
     }
 }
 
