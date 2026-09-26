@@ -40,28 +40,50 @@ struct SettingsView: View {
 
     private var machinesSection: some View {
         Section("Paired machines") {
-            if model.hubs.isEmpty {
-                Text("No machine paired yet.")
+            if model.isDemo {
+                Text("Demo computer. Sample data only.")
                     .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("machines-empty")
-            }
-            ForEach(model.hubs) { hub in
-                NavigationLink {
-                    MachineDetailView(hub: hub)
+                    .accessibilityIdentifier("machines-demo")
+                Button {
+                    model.exitDemo()
                 } label: {
-                    MachineRowLabel(hub: hub,
-                                    isActive: hub.id == model.activeHub?.id,
-                                    routeLabel: model.route.label)
+                    Label("Exit demo", systemImage: "xmark.circle")
+                        .frame(minHeight: Theme.minTap, alignment: .leading)
                 }
-                .accessibilityIdentifier("machine-row")
+                .accessibilityIdentifier("exit-demo")
+            } else {
+                if model.hubs.isEmpty {
+                    Text("No machine paired yet.")
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("machines-empty")
+                }
+                ForEach(model.hubs) { hub in
+                    NavigationLink {
+                        MachineDetailView(hub: hub)
+                    } label: {
+                        MachineRowLabel(hub: hub,
+                                        isActive: hub.id == model.activeHub?.id,
+                                        routeLabel: model.routeLabel)
+                    }
+                    .accessibilityIdentifier("machine-row")
+                }
+                Button {
+                    nav.showPairing = true
+                } label: {
+                    Label("Add machine", systemImage: "plus")
+                        .frame(minHeight: Theme.minTap, alignment: .leading)
+                }
+                .accessibilityIdentifier("add-machine")
+                if model.hubs.isEmpty {
+                    Button {
+                        model.startDemo()
+                    } label: {
+                        Label("Try the demo", systemImage: "play.rectangle")
+                            .frame(minHeight: Theme.minTap, alignment: .leading)
+                    }
+                    .accessibilityIdentifier("settings-try-demo")
+                }
             }
-            Button {
-                nav.showPairing = true
-            } label: {
-                Label("Add machine", systemImage: "plus")
-                    .frame(minHeight: Theme.minTap, alignment: .leading)
-            }
-            .accessibilityIdentifier("add-machine")
         }
     }
 
@@ -71,7 +93,7 @@ struct SettingsView: View {
                 ConnectionDetailView()
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(model.route.label)
+                    Text(model.routeLabel)
                         .foregroundStyle(.primary)
                     Text(model.statusLine)
                         .font(.subheadline)
@@ -110,6 +132,17 @@ struct SettingsView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Build " + about.build)
                 .accessibilityIdentifier("app-build")
+            LinkRow(title: "Privacy Policy", url: AppLinks.privacyPolicy, identifier: "about-privacy")
+            LinkRow(title: "Support", url: AppLinks.support, identifier: "about-support")
+            LinkRow(title: "Get AgnView for your computer", url: AppLinks.getDesktop,
+                    identifier: "about-get-desktop")
+            NavigationLink {
+                AcknowledgementsView()
+            } label: {
+                Text("Acknowledgements")
+                    .frame(minHeight: Theme.minTap, alignment: .leading)
+            }
+            .accessibilityIdentifier("about-acknowledgements")
         }
     }
 
@@ -247,9 +280,11 @@ struct ConnectionDetailView: View {
     var body: some View {
         Form {
             Section {
-                LabeledContent("Route", value: model.route.label)
+                LabeledContent("Route", value: model.routeLabel)
                 if let hub = model.activeHub {
                     LabeledContent("Machine", value: hub.name)
+                } else if model.isDemo {
+                    LabeledContent("Machine", value: "Demo computer")
                 }
             }
             Section("Status") {

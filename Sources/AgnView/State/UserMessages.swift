@@ -18,7 +18,11 @@ enum UserMessages {
     static let modelsNeedSameWiFi = "The model list loads the first time you connect on the same Wi-Fi as your computer. Default lets the hub pick."
     /// The Model menu for an agent the hub lists no models for.
     static let noNamedModels = "The hub lists no models for this agent. Default lets the hub pick."
-    static let offlineHub = "Can't reach this hub. Check that AgnView is running on your computer."
+    /// The banner every screen shows while the demo runs.
+    static let demoBanner = "Demo mode. Sample data only. Nothing is connected."
+    static let demoStatus = "Demo mode. Sample data only."
+    static let demoRouteLabel = "Demo"
+    static let offlineHub ="Can't reach this hub. Check that AgnView is running on your computer."
 
     static func lanBanner(_ reason: LANUnavailableReason) -> String {
         switch reason {
