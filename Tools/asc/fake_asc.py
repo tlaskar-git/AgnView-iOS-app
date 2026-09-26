@@ -52,6 +52,7 @@ class FakeAsc:
         self.upload_requests = []
         self.first_version_rejects_whats_new = True
         self.corrupt = False
+        self.price_stub = True
         self.counter = 0
 
     # ------------------------------------------------------------ storage
@@ -155,14 +156,14 @@ class FakeAsc:
             return self.patch_attrs("appStoreVersions", g.group(1), doc)
         g = m(r"/v1/appStoreVersions/([^/]+)/build", path)
         if g and method == "GET":
+            if "include" in q:
+                return self.err(400, "PARAMETER_ERROR.ILLEGAL",
+                                "The parameter 'include' can not be used with this request",
+                                "A given parameter is not allowed for this request")
             version = self.one("appStoreVersions", g.group(1))
             ref = version["rels"].get("build")
             build = self.one("builds", ref["id"]) if ref else None
-            included = []
-            if build:
-                pre = self.one("preReleaseVersions", build["rels"]["preReleaseVersion"]["id"])
-                included = [self.ser(pre)]
-            return self.single(build, included)
+            return self.single(build)
         g = m(r"/v1/appStoreVersions/([^/]+)/relationships/build", path)
         if g and method == "PATCH":
             version = self.one("appStoreVersions", g.group(1))
@@ -177,6 +178,9 @@ class FakeAsc:
                 if want is None or pre["attributes"]["version"] == want:
                     found.append(b)
             found.sort(key=lambda b: b["attributes"].get("uploadedDate", ""), reverse=True)
+            if "preReleaseVersion" in q.get("include", ""):
+                incl = {b["rels"]["preReleaseVersion"]["id"] for b in found}
+                return self.listing(found, [self.ser(self.one("preReleaseVersions", i)) for i in sorted(incl)])
             return self.listing(found)
         g = m(r"/v1/appStoreVersions/([^/]+)/appStoreVersionLocalizations", path)
         if g and method == "GET":
@@ -259,6 +263,8 @@ class FakeAsc:
         if g and method == "GET":
             found = self.all("appPriceSchedules", g.group(1))
             if not found:
+                if self.price_stub:
+                    return self.reply({"data": {"type": "appPriceSchedules", "id": g.group(1)}})
                 return self.err(404, "NOT_FOUND", "The resource does not exist.")
             return self.single(found[0])
         g = m(r"/v1/apps/([^/]+)/appPricePoints", path)
@@ -268,6 +274,9 @@ class FakeAsc:
             return self.listing(points)
         g = m(r"/v1/appPriceSchedules/([^/]+)/manualPrices", path)
         if g and method == "GET":
+            if self.one("appPriceSchedules", g.group(1)) is None:
+                return self.err(404, "NOT_FOUND", "There is no resource of type 'null' with id '%s'" % g.group(1),
+                                "The specified resource does not exist")
             prices = self.all("appPrices", g.group(1))
             included = []
             for p in prices:
@@ -280,6 +289,9 @@ class FakeAsc:
             sched = self.add("appPriceSchedules", {}, parent=app_id,
                              rels={"baseTerritory": data["relationships"]["baseTerritory"]["data"]})
             for inc in doc.get("included", []):
+                start = (inc.get("attributes") or {}).get("startDate")
+                if not (isinstance(start, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", start)):
+                    return self.err(409, "ENTITY_ERROR.ATTRIBUTE.REQUIRED", "startDate is required")
                 self.add("appPrices", inc.get("attributes"), parent=sched["id"],
                          rels={"appPricePoint": inc["relationships"]["appPricePoint"]["data"]})
             return self.reply({"data": self.ser(sched)}, 201)
@@ -289,6 +301,26 @@ class FakeAsc:
             if not found:
                 return self.err(404, "NOT_FOUND", "The resource does not exist.")
             return self.single(found[0])
+        if method == "GET" and path == "/v1/territories":
+            return self.listing(self.all("territories"))
+        if method == "POST" and path == "/v2/appAvailabilities":
+            data = doc["data"]
+            app_id = data["relationships"]["app"]["data"]["id"]
+            if self.all("appAvailabilities", app_id):
+                return self.err(409, "ENTITY_ERROR", "availability already exists")
+            refs = [r["id"] for r in data["relationships"]["territoryAvailabilities"]["data"]]
+            included = {i["id"]: i for i in doc.get("included", [])}
+            if sorted(refs) != sorted(included) or not refs:
+                return self.err(409, "ENTITY_ERROR", "territoryAvailabilities do not match the included resources")
+            res = self.add("appAvailabilities", data.get("attributes"), parent=app_id)
+            for ref in refs:
+                inc = included[ref]
+                terr = inc["relationships"]["territory"]["data"]["id"]
+                if self.one("territories", terr) is None:
+                    return self.err(409, "ENTITY_ERROR", "unknown territory")
+                self.add("territoryAvailabilities", {"available": inc["attributes"]["available"]},
+                         parent=res["id"], rels={"territory": {"type": "territories", "id": terr}})
+            return self.reply({"data": self.ser(res)}, 201)
         g = m(r"/v2/appAvailabilities/([^/]+)/territoryAvailabilities", path)
         if g and method == "GET":
             return self.listing(self.all("territoryAvailabilities", g.group(1)))
@@ -302,6 +334,10 @@ class FakeAsc:
         data = doc["data"]
         assert data["type"] == rtype and data["id"] == rid, "body type or id does not match the path"
         new = data.get("attributes") or {}
+        if rtype == "appStoreVersions" and "versionString" in new and \
+                res["attributes"].get("appVersionState") not in (
+                    "PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED"):
+            return self.err(409, "STATE_ERROR", "the version is not editable")
         if rtype == "appStoreVersionLocalizations":
             bad = self.reject_whats_new(res["parent"], new)
             if bad:
@@ -411,10 +447,12 @@ AGE_KEYS = ("advertising", "gambling", "violenceRealistic", "alcoholTobaccoOrDru
             "messagingAndChat", "userGeneratedContent")
 
 
-def build_app(bundle_id, public_key=None, complete=True, **kw):
+def build_app(bundle_id, public_key=None, complete=True, locale="en-US", **kw):
     """Return a FakeAsc holding one app. complete=False builds a fresh, empty record."""
     fake = FakeAsc(bundle_id, public_key=public_key, **kw)
-    app = fake.add("apps", {"bundleId": bundle_id,
+    for code in ("USA", "IRL", "GBR", "FRA", "DEU"):
+        fake.add("territories", {}, rid=code)
+    app = fake.add("apps", {"bundleId": bundle_id, "primaryLocale": locale,
                             "contentRightsDeclaration": "DOES_NOT_USE_THIRD_PARTY_CONTENT" if complete else None},
                    rid="900001")
     version = fake.add("appStoreVersions", {"versionString": "1.0", "platform": "IOS",
@@ -430,14 +468,14 @@ def build_app(bundle_id, public_key=None, complete=True, **kw):
     vloc = None
     if complete:
         vloc = fake.add("appStoreVersionLocalizations", {
-            "locale": "en-US", "description": "A test description.", "keywords": "one,two",
+            "locale": locale, "description": "A test description.", "keywords": "one,two",
             "promotionalText": "Promo", "whatsNew": "", "supportUrl": "https://example.test/support",
             "marketingUrl": "https://example.test"}, parent=version["id"])
     info = fake.add("appInfos", {"state": "PREPARE_FOR_SUBMISSION"}, parent=app["id"],
                     rels=({"primaryCategory": {"type": "appCategories", "id": "DEVELOPER_TOOLS"},
                            "secondaryCategory": {"type": "appCategories", "id": "PRODUCTIVITY"}} if complete else {}))
     if complete:
-        fake.add("appInfoLocalizations", {"locale": "en-US", "name": "Test App", "subtitle": "A subtitle",
+        fake.add("appInfoLocalizations", {"locale": locale, "name": "Test App", "subtitle": "A subtitle",
                                           "privacyPolicyUrl": "https://example.test/privacy"}, parent=info["id"])
     fake.add("ageRatingDeclarations", {k: (("NONE" if k != "advertising" else False) if complete else None)
                                        for k in AGE_KEYS} | {"kidsAgeBand": None}, parent=info["id"])

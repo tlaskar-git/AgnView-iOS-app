@@ -404,7 +404,7 @@ class CheckTests(unittest.TestCase):
         old = fake.add("preReleaseVersions", {"version": "0.9"}, parent="900001")
         fake.all("builds")[0]["rels"]["preReleaseVersion"] = {"type": "preReleaseVersions", "id": old["id"]}
         _c, lines = self.check(fake)
-        self.assertIn("MISSING build attached: the attached build is for version 0.9 but the editable version is 1.0: run apply", lines)
+        self.assertIn("MISSING build attached: the attached build 7 is not a build of version 1.0: run apply", lines)
         self.assertTrue(any(l.startswith("MISSING newest processed build") for l in lines))
 
     def test_newer_build_is_reported(self):
@@ -626,6 +626,7 @@ class ApplyTests(unittest.TestCase):
             ("PATCH", "/v1/appStoreVersions/%s/relationships/build" % vid),
             ("POST", "/v1/appStoreReviewDetails"),
             ("POST", "/v1/appPriceSchedules"),
+            ("POST", "/v2/appAvailabilities"),
         ])
         bodies = [e["body"] for e in self.writes(fake)]
         loc = bodies[0]["data"]
@@ -658,6 +659,7 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual(price["data"]["relationships"]["baseTerritory"]["data"], {"type": "territories", "id": "USA"})
         ref = price["data"]["relationships"]["manualPrices"]["data"][0]
         self.assertEqual(price["included"][0]["id"], ref["id"])
+        self.assertRegex(price["included"][0]["attributes"]["startDate"], r"^\d{4}-\d{2}-\d{2}$")
         self.assertEqual(price["included"][0]["relationships"]["appPricePoint"]["data"],
                          {"type": "appPricePoints", "id": "pp-free"})
 
@@ -686,7 +688,7 @@ class ApplyTests(unittest.TestCase):
         _c, chk = self.tool.run(fake, ["check", "--listing", LISTING_PATH])
         missing = [l.split(":")[0] for l in chk if l.startswith("MISSING")]
         self.assertEqual(sorted(missing), [
-            "MISSING availability", "MISSING screenshots en-US iPad 13 inch", "MISSING screenshots en-US iPhone 6.9 inch"])
+            "MISSING screenshots en-US iPad 13 inch", "MISSING screenshots en-US iPhone 6.9 inch"])
 
     def test_update_only_sends_changed_fields(self):
         fake = self.tool.fake()
@@ -824,7 +826,7 @@ class ApplyTests(unittest.TestCase):
         fake = self.tool.fake()
         code, lines = self.apply(fake, ["--steps", "price"])
         self.assertEqual(code, 0)
-        self.assertIn("SKIP price schedule: a price schedule already exists", lines)
+        self.assertIn("SKIP price schedule: a price is already set", lines)
         self.assertEqual(self.writes(fake), [])
 
     def test_no_free_price_point_fails(self):
@@ -851,6 +853,275 @@ class ApplyTests(unittest.TestCase):
         fake.public_key = new_key().public_key()
         code, _lines = self.apply(fake)
         self.assertEqual(code, 2)
+
+
+def real_like(tool, locale="en-GB"):
+    """What the first real run showed: primary locale en-GB, empty localisations, no build attached."""
+    fake = tool.fake(complete=False, locale=locale)
+    fake.add("appStoreVersionLocalizations", {"locale": locale}, parent=fake.all("appStoreVersions")[0]["id"])
+    fake.add("appInfoLocalizations", {"locale": locale, "name": "Test App"}, parent=fake.all("appInfos")[0]["id"])
+    return fake
+
+
+def add_build(fake, marketing, number, uploaded, state="VALID"):
+    pre = next((p for p in fake.all("preReleaseVersions") if p["attributes"]["version"] == marketing), None)
+    if pre is None:
+        pre = fake.add("preReleaseVersions", {"version": marketing}, parent="900001")
+    return fake.add("builds", {"version": str(number), "processingState": state, "expired": False,
+                               "uploadedDate": uploaded, "usesNonExemptEncryption": False},
+                    parent="900001", rels={"preReleaseVersion": {"type": "preReleaseVersions", "id": pre["id"]}})
+
+
+class RealRunTests(unittest.TestCase):
+    """Each test reproduces one finding of the first real run against the fake API."""
+
+    def setUp(self):
+        self.tool = ToolRun(CONTACT)
+        self.addCleanup(self.tool.close)
+
+    def check(self, fake, extra=None):
+        return self.tool.run(fake, ["check", "--listing", LISTING_PATH] + (extra or []))
+
+    def apply(self, fake, extra=None):
+        return self.tool.run(fake, ["apply", "--listing", LISTING_PATH] + (extra or []))
+
+    @staticmethod
+    def writes(fake):
+        return [e for e in fake.log if e["method"] != "GET"]
+
+    # 1 locale
+    def test_check_targets_the_primary_locale(self):
+        fake = real_like(self.tool)
+        _c, lines = self.check(fake)
+        self.assertIn("INFO target locale: en-GB (the app's primary locale)", lines)
+        self.assertIn("INFO listing text: written from listing locale en-US to en-GB", lines)
+        self.assertTrue(any(l.startswith("MISSING version localisation en-GB description") for l in lines))
+        self.assertTrue(any(l.startswith("MISSING app info localisation en-GB privacy policy URL") for l in lines))
+        self.assertFalse(any("en-US" in l and "listing" not in l for l in lines), "\n".join(lines))
+
+    def test_apply_updates_the_existing_primary_locale_localisations(self):
+        fake = real_like(self.tool)
+        code, lines = self.apply(fake, ["--steps", "localisation,appinfo"])
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertIn("INFO target locale: en-GB (the app's primary locale)", lines)
+        writes = self.writes(fake)
+        self.assertEqual([e["method"] for e in writes[:2]], ["PATCH", "PATCH"])
+        self.assertTrue(writes[0]["path"].startswith("/v1/appStoreVersionLocalizations/"))
+        self.assertNotIn("locale", writes[0]["body"]["data"]["attributes"])
+        self.assertEqual(writes[0]["body"]["data"]["attributes"]["keywords"], "test,placeholder,example")
+        self.assertTrue(writes[1]["path"].startswith("/v1/appInfoLocalizations/"))
+        self.assertEqual(fake.requests("POST", r"Localizations$"), [])
+        self.assertEqual(len(fake.all("appStoreVersionLocalizations")), 1)
+
+    def test_locale_override(self):
+        fake = real_like(self.tool)
+        code, lines = self.apply(fake, ["--steps", "localisation", "--locale", "de-DE"])
+        self.assertEqual(code, 0)
+        self.assertIn("INFO target locale: de-DE (from --locale)", lines)
+        posts = fake.requests("POST", r"^/v1/appStoreVersionLocalizations$")
+        self.assertEqual(posts[0]["body"]["data"]["attributes"]["locale"], "de-DE")
+        code, _l = self.apply(fake, ["--locale", "English"])
+        self.assertEqual(code, 2)
+
+    def test_locale_falls_back_to_the_listing_when_the_app_has_none(self):
+        fake = real_like(self.tool, locale="en-US")
+        del fake.all("apps")[0]["attributes"]["primaryLocale"]
+        _c, lines = self.check(fake)
+        self.assertIn("INFO target locale: en-US (from the listing, because the app reports no primary locale)", lines)
+
+    def test_screenshots_use_the_target_locale(self):
+        fake = real_like(self.tool)
+        _c, lines = self.check(fake)
+        self.assertTrue(any(l.startswith("MISSING screenshots en-GB iPhone 6.9 inch") for l in lines))
+
+    # 2 build read
+    def test_attached_build_is_read_without_include(self):
+        fake = real_like(self.tool)
+        fake.all("appStoreVersions")[0]["rels"]["build"] = {"type": "builds", "id": fake.all("builds")[0]["id"]}
+        _c, lines = self.check(fake)
+        for e in fake.requests("GET", r"/build$"):
+            self.assertNotIn("include", e["query"])
+        self.assertIn("PASS build attached: build 7, version 1.0, processing VALID", lines)
+        self.assertFalse(any("could not be read" in l for l in lines), "\n".join(lines))
+
+    def test_no_build_attached_is_a_missing_line_not_an_error(self):
+        fake = real_like(self.tool)
+        _c, lines = self.check(fake)
+        self.assertTrue(any(l.startswith("MISSING build attached: no build is attached") for l in lines))
+
+    def test_build_read_404_counts_as_none(self):
+        fake = real_like(self.tool)
+        fake.failures.append(("GET", r"/build$", 404, [{"code": "NOT_FOUND", "title": "x"}]))
+        _c, lines = self.check(fake)
+        self.assertTrue(any(l.startswith("MISSING build attached: no build is attached") for l in lines))
+
+    # 3 price
+    def test_price_stub_reads_as_not_set(self):
+        fake = real_like(self.tool)
+        _c, lines = self.check(fake)
+        self.assertTrue(any(l.startswith("MISSING price schedule: not set, run apply") or
+                            l.startswith("MISSING price schedule: not set: run apply") for l in lines), "\n".join(lines))
+        self.assertFalse(any("price schedule prices" in l for l in lines))
+        self.assertFalse(any("could not be read" in l for l in lines), "\n".join(lines))
+
+    def test_price_apply_sets_free_once(self):
+        fake = real_like(self.tool)
+        code, lines = self.apply(fake, ["--steps", "price"])
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertIn("SET price schedule: Free set for the base territory", lines)
+        self.assertEqual(len(fake.requests("POST", r"^/v1/appPriceSchedules$")), 1)
+        code, lines = self.apply(fake, ["--steps", "price"])
+        self.assertIn("SKIP price schedule: a price is already set", lines)
+        self.assertEqual(len(fake.requests("POST", r"^/v1/appPriceSchedules$")), 1)
+        _c, chk = self.check(fake)
+        self.assertIn("PASS price schedule: set, Free", chk)
+
+    def test_price_base_territory_flag(self):
+        fake = real_like(self.tool)
+        fake.add("appPricePoints", {"customerPrice": "0.0"}, parent="IRL", rid="pp-irl-free")
+        code, _l = self.apply(fake, ["--steps", "price", "--base-territory", "IRL"])
+        self.assertEqual(code, 0)
+        body = fake.requests("POST", r"appPriceSchedules$")[0]["body"]
+        self.assertEqual(body["data"]["relationships"]["baseTerritory"]["data"]["id"], "IRL")
+        self.assertEqual(body["included"][0]["relationships"]["appPricePoint"]["data"]["id"], "pp-irl-free")
+
+    # 4 version string
+    def two_versions(self):
+        fake = real_like(self.tool)
+        fake.db["builds"].clear()
+        add_build(fake, "1.0", 1, "2026-09-01T10:00:00Z")
+        add_build(fake, "0.1.5", 12, "2026-09-20T10:00:00Z")
+        return fake
+
+    def test_check_reports_a_version_mismatch(self):
+        fake = self.two_versions()
+        _c, lines = self.check(fake)
+        line = next(l for l in lines if l.startswith("MISSING version string"))
+        self.assertIn("the editable version is 1.0 but the newest valid build (build 12) is for 0.1.5", line)
+        self.assertIn("apply sets the version to 0.1.5 and attaches that build", line)
+        self.assertIn("--set-version keep", line)
+
+    def test_apply_sets_the_version_and_attaches_the_newest_valid_build(self):
+        fake = self.two_versions()
+        vid = fake.all("appStoreVersions")[0]["id"]
+        newest = next(b for b in fake.all("builds") if b["attributes"]["version"] == "12")
+        code, lines = self.apply(fake, ["--steps", "version,build"])
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertIn("SET version: changed the version from 1.0 to 0.1.5 (from build 12)", lines)
+        self.assertIn("SET build: attached build 12 to version 0.1.5", lines)
+        writes = self.writes(fake)
+        self.assertEqual([(e["method"], e["path"]) for e in writes], [
+            ("PATCH", "/v1/appStoreVersions/%s" % vid),
+            ("PATCH", "/v1/appStoreVersions/%s/relationships/build" % vid)])
+        self.assertEqual(writes[0]["body"]["data"]["attributes"], {"versionString": "0.1.5"})
+        self.assertEqual(writes[1]["body"]["data"]["id"], newest["id"])
+        self.assertEqual(fake.all("appStoreVersions")[0]["attributes"]["versionString"], "0.1.5")
+        _c, chk = self.check(fake)
+        self.assertIn("PASS version string: 0.1.5 matches the newest valid build (build 12)", chk)
+        code, lines = self.apply(fake, ["--steps", "version,build"])
+        self.assertEqual(len(self.writes(fake)), 2, "the second run must not write")
+        self.assertIn("SKIP version: already 0.1.5", lines)
+
+    def test_set_version_keep_and_explicit(self):
+        fake = self.two_versions()
+        code, lines = self.apply(fake, ["--steps", "version,build", "--set-version", "keep"])
+        self.assertEqual(code, 0)
+        self.assertIn("SKIP version: kept at 1.0", lines)
+        self.assertIn("SET build: attached build 1 to version 1.0", lines)
+        fake = self.two_versions()
+        code, lines = self.apply(fake, ["--steps", "version,build", "--set-version", "0.1.5"])
+        self.assertIn("SET version: changed the version from 1.0 to 0.1.5 (from --set-version)", lines)
+        self.assertIn("SET build: attached build 12 to version 0.1.5", lines)
+
+    def test_build_version_and_build_number_choose_the_build(self):
+        fake = self.two_versions()
+        code, lines = self.apply(fake, ["--steps", "version,build", "--build-version", "1.0"])
+        self.assertEqual(code, 0)
+        self.assertIn("SKIP version: already 1.0", lines)
+        self.assertIn("SET build: attached build 1 to version 1.0", lines)
+        fake = self.two_versions()
+        add_build(fake, "0.1.5", 13, "2026-09-21T10:00:00Z")
+        code, lines = self.apply(fake, ["--steps", "version,build", "--build-number", "12"])
+        self.assertIn("SET build: attached build 12 to version 0.1.5", lines)
+
+    def test_processing_build_is_never_chosen_for_the_version(self):
+        fake = self.two_versions()
+        add_build(fake, "0.2.0", 20, "2026-09-25T10:00:00Z", state="PROCESSING")
+        _c, lines = self.apply(fake, ["--steps", "version"])
+        self.assertIn("SET version: changed the version from 1.0 to 0.1.5 (from build 12)", lines)
+
+    def test_version_is_refused_when_not_editable(self):
+        fake = self.two_versions()
+        fake.all("appStoreVersions")[0]["attributes"]["appVersionState"] = "WAITING_FOR_REVIEW"
+        code, lines = self.apply(fake, ["--steps", "version", "--set-version", "0.1.5"])
+        self.assertEqual(code, 1)
+        self.assertEqual(self.writes(fake), [])
+        self.assertIn("FAIL editable version: no version can be edited: create a new version in App Store Connect", lines)
+
+    def test_version_step_refuses_a_state_the_api_would_reject(self):
+        fake = self.two_versions()
+        fake.all("appStoreVersions")[0]["attributes"]["appVersionState"] = "INVALID_BINARY"
+        code, lines = self.apply(fake, ["--steps", "version", "--set-version", "0.1.5"])
+        self.assertEqual(code, 1)
+        self.assertTrue(any(l.startswith("FAIL version: HTTP 409") for l in lines))
+
+    def test_bad_version_arguments(self):
+        fake = self.two_versions()
+        for extra in (["--set-version", "1.x"], ["--build-version", "abc"], ["--territories", "usa"]):
+            code, lines = self.apply(fake, extra)
+            self.assertEqual(code, 2, extra)
+        self.assertEqual(fake.log, [])
+
+    # 5 availability
+    def test_availability_is_set_for_all_territories(self):
+        fake = real_like(self.tool)
+        code, lines = self.apply(fake, ["--steps", "availability"])
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertIn("SET availability: set for 5 territories, new territories included", lines)
+        post = fake.requests("POST", r"^/v2/appAvailabilities$")[0]["body"]
+        self.assertEqual(post["data"]["type"], "appAvailabilities")
+        self.assertEqual(post["data"]["attributes"], {"availableInNewTerritories": True})
+        self.assertEqual(post["data"]["relationships"]["app"]["data"], {"type": "apps", "id": "900001"})
+        refs = [r["id"] for r in post["data"]["relationships"]["territoryAvailabilities"]["data"]]
+        self.assertEqual(sorted(refs), sorted(i["id"] for i in post["included"]))
+        self.assertEqual(sorted(i["relationships"]["territory"]["data"]["id"] for i in post["included"]),
+                         ["DEU", "FRA", "GBR", "IRL", "USA"])
+        self.assertTrue(all(i["attributes"] == {"available": True} for i in post["included"]))
+        _c, chk = self.check(fake)
+        self.assertIn("PASS availability: 5 territories", chk)
+        code, lines = self.apply(fake, ["--steps", "availability"])
+        self.assertIn("SKIP availability: already set for 5 territories", lines)
+        self.assertEqual(len(fake.requests("POST", r"appAvailabilities")), 1)
+
+    def test_availability_list_and_unknown_code(self):
+        fake = real_like(self.tool)
+        code, lines = self.apply(fake, ["--steps", "availability", "--territories", "USA,IRL"])
+        self.assertEqual(code, 0)
+        self.assertIn("SET availability: set for 2 territories", lines)
+        post = fake.requests("POST", r"appAvailabilities")[0]["body"]
+        self.assertEqual(post["data"]["attributes"], {"availableInNewTerritories": False})
+        fake = real_like(self.tool)
+        code, lines = self.apply(fake, ["--steps", "availability", "--territories", "USA,ZZZ"])
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL availability: 1 unknown territory code(s) in --territories", lines)
+        self.assertEqual(self.writes(fake), [])
+
+    # 6 the whole picture
+    def test_fresh_check_has_no_unreadable_lines_and_only_settable_or_manual_gaps(self):
+        fake = real_like(self.tool)
+        _c, lines = self.check(fake)
+        self.assertFalse(any("could not be read" in l for l in lines), "\n".join(lines))
+
+    def test_apply_then_check_leaves_only_screenshots_and_manual_items(self):
+        fake = self.two_versions()
+        code, lines = self.apply(fake)
+        self.assertEqual(code, 0, "\n".join(lines))
+        _c, chk = self.check(fake)
+        missing = sorted(l.split(":")[0] for l in chk if l.startswith("MISSING"))
+        self.assertEqual(missing, ["MISSING screenshots en-GB iPad 13 inch", "MISSING screenshots en-GB iPhone 6.9 inch"],
+                         "\n".join(chk))
+        self.assertFalse(any("could not be read" in l for l in chk))
+        self.assertEqual(len([l for l in chk if l.startswith("MANUAL")]), 3)
 
 
 class ScreenshotTests(unittest.TestCase):

@@ -25,6 +25,21 @@ on:
         description: Replace screenshot sets that already hold screenshots (apply only)
         type: boolean
         default: false
+      set_version:
+        description: "apply only: auto takes the version from the newest valid build, keep leaves it, or give a version such as 0.1.5"
+        type: string
+        required: false
+        default: auto
+      territories:
+        description: "apply only: all, or a comma separated list of territory codes such as USA,IRL"
+        type: string
+        required: false
+        default: all
+      locale:
+        description: Target locale for the listing text. Empty means the app's primary locale
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -176,6 +191,9 @@ jobs:
         env:
           MODE: ${{ inputs.mode }}
           REPLACE: ${{ inputs.replace_screenshots }}
+          SET_VERSION: ${{ inputs.set_version }}
+          TERRITORIES: ${{ inputs.territories }}
+          TARGET_LOCALE: ${{ inputs.locale }}
           ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
           ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
           APP_BUNDLE_ID: ${{ secrets.APP_BUNDLE_ID }}
@@ -187,7 +205,11 @@ jobs:
         run: |
           set +x
           args=("$MODE" --listing AppStore/listing.json)
+          if [ -n "$TARGET_LOCALE" ]; then
+            args+=(--locale "$TARGET_LOCALE")
+          fi
           if [ "$MODE" = "apply" ]; then
+            args+=(--set-version "${SET_VERSION:-auto}" --territories "${TERRITORIES:-all}")
             if [ -n "${SHOTS_DIR:-}" ]; then
               args+=(--screenshots-dir "$SHOTS_DIR")
               if [ "$REPLACE" = "true" ]; then

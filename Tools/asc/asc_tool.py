@@ -475,6 +475,18 @@ AGE_OPTIONAL = frozenset((
 ))
 
 
+def resolve_locale(app, override, listing):
+    """Return (locale, where it came from). The listing text is written to this locale."""
+    if override:
+        return override, "from --locale"
+    primary = attrs(app).get("primaryLocale")
+    if primary:
+        return primary, "the app's primary locale"
+    if listing and listing.get("locale"):
+        return listing["locale"], "from the listing, because the app reports no primary locale"
+    return None, ""
+
+
 class AuthError(Exception):
     """The API rejected the credentials."""
 
@@ -528,16 +540,8 @@ def pick_editable(versions):
 
 
 def attached_build(api, version_id):
-    """Return (build, marketing version string) for the build on a version."""
-    doc = api.get("/v1/appStoreVersions/%s/build" % version_id, {"include": "preReleaseVersion"})
-    build = doc.get("data")
-    if not build:
-        return None, None
-    pre = None
-    for item in doc.get("included") or []:
-        if item.get("type") == "preReleaseVersions":
-            pre = attrs(item).get("version")
-    return build, pre
+    """Return the build attached to a version, or None. This endpoint takes no include parameter."""
+    return try_get(api, "/v1/appStoreVersions/%s/build" % version_id)
 
 
 def build_number_key(build):
@@ -613,8 +617,52 @@ def price_schedule(api, app_id):
 
 
 def manual_prices(api, schedule_id):
-    return api.get_all("/v1/appPriceSchedules/%s/manualPrices" % schedule_id,
-                       {"include": "appPricePoint", "limit": "200"})
+    path = "/v1/appPriceSchedules/%s/manualPrices" % schedule_id
+    try:
+        return api.get_all(path, {"include": "appPricePoint", "limit": "200"})
+    except AscError as err:
+        if err.status != 400:
+            raise
+        return api.get_all(path, {"limit": "200"})
+
+
+def current_prices(api, app_id):
+    """Return (prices, included) for the manual prices, or None when no price is set.
+
+    Apple answers with a schedule stub that carries the app id even when nothing is set, and
+    the manualPrices call on that stub is a 404. Both count as "not set".
+    """
+    schedule = price_schedule(api, app_id)
+    if schedule is None:
+        return None
+    try:
+        data, included = manual_prices(api, schedule["id"])
+    except AscError as err:
+        if err.status == 404:
+            return None
+        raise
+    return (data, included) if data else None
+
+
+def list_all_builds(api, app_id):
+    """Return [(build, marketing version)] for every build of the app, newest upload first."""
+    data, included = api.get_all("/v1/builds", {
+        "filter[app]": app_id, "include": "preReleaseVersion", "sort": "-uploadedDate", "limit": "200"})
+    versions = {i["id"]: attrs(i).get("version") for i in included if i.get("type") == "preReleaseVersions"}
+    return [(b, versions.get(rel_id(b, "preReleaseVersion"))) for b in data]
+
+
+def newest_valid_pair(pairs):
+    """The newest valid, unexpired (build, version) pair."""
+    valid = [(b, v) for b, v in pairs
+             if attrs(b).get("processingState") == "VALID" and not attrs(b).get("expired")]
+    valid.sort(key=lambda bv: (attrs(bv[0]).get("uploadedDate") or "", build_number_key(bv[0])), reverse=True)
+    return valid[0] if valid else (None, None)
+
+
+def list_territory_ids(api):
+    data, _ = api.get_all("/v1/territories", {"limit": "200"})
+    return [t["id"] for t in data]
 
 
 def app_availability(api, app_id):
@@ -625,6 +673,16 @@ def available_territories(api, availability_id):
     data, _ = api.get_all("/v2/appAvailabilities/%s/territoryAvailabilities" % availability_id,
                           {"limit": "200"})
     return sum(1 for x in data if attrs(x).get("available"))
+
+
+def count_territories(api, availability_id):
+    """Available territory count. A 404 on a stub availability counts as none."""
+    try:
+        return available_territories(api, availability_id)
+    except AscError as err:
+        if err.status == 404:
+            return 0
+        raise
 
 
 def is_zero(value):
@@ -639,11 +697,13 @@ def is_zero(value):
 class Checker:
     """Read-only report. Each read is guarded: a failed read prints INFO and the run continues."""
 
-    def __init__(self, api, out, bundle_id, listing):
+    def __init__(self, api, out, bundle_id, listing, locale=None):
         self.api = api
         self.out = out
         self.bundle_id = bundle_id
         self.listing = listing
+        self.locale_override = locale
+        self.locale = None
         self.missing = 0
         self.read_ok = True
 
@@ -697,6 +757,12 @@ class Checker:
         self.ok("app record", "found by bundle id")
         app_id = app["id"]
         mask_for_ci(app_id, self.out)
+        self.locale, where = resolve_locale(app, self.locale_override, self.listing)
+        if self.locale:
+            self.info("target locale", "%s (%s)" % (self.locale, where))
+            source = (self.listing or {}).get("locale")
+            if source and source != self.locale:
+                self.info("listing text", "written from listing locale %s to %s" % (source, self.locale))
         rights = attrs(app).get("contentRightsDeclaration")
         if rights:
             self.ok("content rights declaration", rights)
@@ -738,19 +804,19 @@ class Checker:
         builds = self.guarded("builds", lambda: list_builds(self.api, app_id, vstring))
         newest = newest_valid_build(builds) if builds is not None else None
         if attached_ok:
-            build, pre = attached
+            build = attached
             if build is None:
                 self.miss("build attached", "no build is attached: run apply, or choose one on the version page")
             else:
                 a = attrs(build)
                 state = a.get("processingState") or "UNKNOWN"
                 number = a.get("version") or "?"
-                if pre is not None and pre != vstring:
-                    self.miss("build attached", "the attached build is for version %s but the editable version is %s: run apply" % (pre, vstring))
+                if builds is not None and build["id"] not in {b["id"] for b in builds}:
+                    self.miss("build attached", "the attached build %s is not a build of version %s: run apply" % (number, vstring))
                 elif state != "VALID":
                     self.miss("build attached", "build %s is attached but its processing state is %s" % (number, state))
                 else:
-                    self.ok("build attached", "build %s, version %s, processing %s" % (number, pre or vstring, state))
+                    self.ok("build attached", "build %s, version %s, processing %s" % (number, vstring, state))
                 if a.get("usesNonExemptEncryption") is None:
                     self.info("build export compliance", "build %s has no export compliance answer yet" % number)
                 if newest is not None and newest["id"] != build["id"]:
@@ -764,11 +830,27 @@ class Checker:
                 self.miss("newest processed build",
                           "no valid build for version %s (%d processing, %d other): upload one with the release workflow and wait for processing"
                           % (vstring, pending, len(builds) - pending))
+        self.check_version_string(app_id, vstring)
+
+    def check_version_string(self, app_id, vstring):
+        pairs = self.guarded("version string", lambda: list_all_builds(self.api, app_id))
+        if pairs is None:
+            return
+        build, version = newest_valid_pair(pairs)
+        if build is None or not version:
+            return
+        number = attrs(build).get("version")
+        if version == vstring:
+            self.ok("version string", "%s matches the newest valid build (build %s)" % (vstring, number))
+        else:
+            self.miss("version string",
+                      "the editable version is %s but the newest valid build (build %s) is for %s: apply sets the version to %s and attaches that build, or use --set-version keep to stay on %s"
+                      % (vstring, number, version, version, vstring))
 
     def wanted_locales(self, locs):
         by_locale = {attrs(l).get("locale"): l for l in locs}
-        if self.listing and self.listing.get("locale"):
-            return [self.listing["locale"]], by_locale
+        if self.locale:
+            return [self.locale], by_locale
         return sorted(k for k in by_locale if k), by_locale
 
     def check_version_localisations(self, locs):
@@ -913,38 +995,35 @@ class Checker:
                     self.ok("age rating", "%d answers set" % len(required))
 
     def check_price(self, app_id):
-        schedule = self.guarded("price schedule", lambda: price_schedule(self.api, app_id))
-        if schedule is None:
-            if self.read_ok:
-                self.miss("price schedule", "not set: run apply to set Free, or choose a price")
+        got = self.guarded("price schedule", lambda: current_prices(self.api, app_id))
+        if not self.read_ok:
             return
-        got = self.guarded("price schedule prices", lambda: manual_prices(self.api, schedule["id"]))
         if got is None:
+            self.miss("price schedule", "not set: run apply to set Free, or choose a price")
             return
-        data, included = got
-        if not data:
-            self.miss("price schedule", "no price is set: run apply to set Free, or choose a price")
-            return
+        _data, included = got
         amounts = [attrs(i).get("customerPrice") for i in included
                    if str(i.get("type", "")).startswith("appPricePoint")]
         if amounts and all(is_zero(x) for x in amounts):
             self.ok("price schedule", "set, Free")
-        else:
+        elif amounts:
             self.info("price schedule", "set, not Free")
+        else:
+            self.ok("price schedule", "set")
 
     def check_availability(self, app_id):
         avail = self.guarded("availability", lambda: app_availability(self.api, app_id))
         if avail is None:
             if self.read_ok:
-                self.miss("availability", "not set: choose territories in App Store Connect, Pricing and Availability")
+                self.miss("availability", "not set: run apply, or choose territories in Pricing and Availability")
             return
-        count = self.guarded("availability territories", lambda: available_territories(self.api, avail["id"]))
+        count = self.guarded("availability territories", lambda: count_territories(self.api, avail["id"]))
         if count is None:
             return
         if count:
             self.ok("availability", "%d territories" % count)
         else:
-            self.miss("availability", "no territory is available: choose territories in Pricing and Availability")
+            self.miss("availability", "no territory is available: run apply, or choose territories in Pricing and Availability")
 
     def manual_lines(self):
         self.out.line("MANUAL", "App Privacy questionnaire",
@@ -961,8 +1040,8 @@ class Checker:
         return 0
 
 
-def run_check(api, out, bundle_id, listing):
-    return Checker(api, out, bundle_id, listing).run()
+def run_check(api, out, bundle_id, listing, locale=None):
+    return Checker(api, out, bundle_id, listing, locale=locale).run()
 
 
 # ------------------------------------------------------------ screenshots --
@@ -1009,7 +1088,8 @@ def natural_key(name):
 # ----------------------------------------------------------------- apply ----
 
 STEP_NAMES = ("localisation", "appinfo", "copyright", "agerating", "contentrights",
-              "build", "review", "screenshots", "price")
+              "version", "build", "review", "screenshots", "price", "availability")
+VERSION_RE = re.compile(r"^[0-9]+(\.[0-9]+){0,2}$")
 RELEASED_STATES = (
     "READY_FOR_SALE", "REPLACED_WITH_NEW_VERSION", "REMOVED_FROM_SALE", "DEVELOPER_REMOVED_FROM_SALE",
     "PENDING_DEVELOPER_RELEASE", "PENDING_APPLE_RELEASE", "PROCESSING_FOR_APP_STORE",
@@ -1055,7 +1135,8 @@ class Applier:
 
     def __init__(self, api, out, bundle_id, listing, steps=STEP_NAMES, build_number=None,
                  screenshots_dir=None, replace_screenshots=False, base_territory="USA",
-                 contact=None, sleep=time.sleep, clock=time.time):
+                 contact=None, sleep=time.sleep, clock=time.time, locale=None,
+                 set_version="auto", build_version=None, territories="all"):
         self.api = api
         self.out = out
         self.bundle_id = bundle_id
@@ -1069,7 +1150,11 @@ class Applier:
         self.sleep = sleep
         self.clock = clock
         self.failed = 0
-        self.locale = listing["locale"]
+        self.locale_override = locale
+        self.locale = None
+        self.set_version = set_version
+        self.build_version = build_version
+        self.territories = territories
         self.app_id = None
         self.version = None
         self.versions = []
@@ -1110,6 +1195,14 @@ class Applier:
         self.app_id = app["id"]
         mask_for_ci(self.app_id, self.out)
         self.app = app
+        self.locale, where = resolve_locale(app, self.locale_override, self.listing)
+        if self.locale is None:
+            self.fail("locale", "the app reports no primary locale: pass --locale")
+            return self.finish()
+        self.out.line("INFO", "target locale", "%s (%s)" % (self.locale, where))
+        source = self.listing.get("locale")
+        if source and source != self.locale:
+            self.out.line("INFO", "listing text", "written from listing locale %s to %s" % (source, self.locale))
         try:
             self.versions = list_versions(self.api, self.app_id)
             self.version = pick_editable(self.versions)
@@ -1128,10 +1221,12 @@ class Applier:
             "copyright": self.step_copyright,
             "agerating": self.step_agerating,
             "contentrights": self.step_contentrights,
+            "version": self.step_version,
             "build": self.step_build,
             "review": self.step_review,
             "screenshots": self.step_screenshots,
             "price": self.step_price,
+            "availability": self.step_availability,
         }
         for name in STEP_NAMES:
             if name not in self.steps:
@@ -1254,8 +1349,42 @@ class Applier:
             "data": {"type": "apps", "id": self.app_id, "attributes": {"contentRightsDeclaration": value}}})
         self.set("content rights", "updated")
 
+    def step_version(self):
+        current = attrs(self.version).get("versionString") or ""
+        mode = self.set_version
+        if mode == "keep":
+            self.skip("version", "kept at %s" % current)
+            return
+        state = version_state(self.version)
+        if state not in EDITABLE_STATES:
+            self.fail("version", "the version is in state %s and cannot be changed" % state)
+            return
+        if mode == "auto":
+            pairs = list_all_builds(self.api, self.app_id)
+            if self.build_version:
+                pairs = [(b, v) for b, v in pairs if v == self.build_version]
+            if self.build_number is not None:
+                pairs = [(b, v) for b, v in pairs if attrs(b).get("version") == str(self.build_number)]
+            build, target = newest_valid_pair(pairs)
+            if build is None or not target:
+                self.skip("version", "no valid build to take a version from, kept at %s" % current)
+                return
+            reason = "from build %s" % attrs(build).get("version")
+        else:
+            target, reason = mode, "from --set-version"
+        if target == current:
+            self.skip("version", "already %s" % current)
+            return
+        self.api.patch("/v1/appStoreVersions/%s" % self.version["id"], {
+            "data": {"type": "appStoreVersions", "id": self.version["id"], "attributes": {"versionString": target}}})
+        self.version.setdefault("attributes", {})["versionString"] = target
+        self.set("version", "changed the version from %s to %s (%s)" % (current, target, reason))
+
     def step_build(self):
         vstring = attrs(self.version).get("versionString") or ""
+        if self.build_version and self.build_version != vstring:
+            self.fail("build", "--build-version %s does not match the editable version %s: use --set-version" % (self.build_version, vstring))
+            return
         builds = list_builds(self.api, self.app_id, vstring)
         valid = [b for b in builds if attrs(b).get("processingState") == "VALID" and not attrs(b).get("expired")]
         if self.build_number is not None:
@@ -1268,7 +1397,7 @@ class Applier:
             if chosen is None:
                 self.skip("build", "no valid build exists for version %s: upload one and wait for processing" % vstring)
                 return
-        current, _pre = attached_build(self.api, self.version["id"])
+        current = attached_build(self.api, self.version["id"])
         if current is not None and current["id"] == chosen["id"]:
             self.skip("build", "build %s is already attached" % attrs(chosen).get("version"))
             return
@@ -1427,8 +1556,8 @@ class Applier:
         return shot["id"]
 
     def step_price(self):
-        if price_schedule(self.api, self.app_id) is not None:
-            self.skip("price schedule", "a price schedule already exists")
+        if current_prices(self.api, self.app_id) is not None:
+            self.skip("price schedule", "a price is already set")
             return
         points, _ = self.api.get_all("/v1/apps/%s/appPricePoints" % self.app_id,
                                      {"filter[territory]": self.base_territory, "limit": "200"})
@@ -1436,14 +1565,45 @@ class Applier:
         if free is None:
             self.fail("price schedule", "no Free price point was found for the base territory")
             return
+        start = time.strftime("%Y-%m-%d", time.gmtime(self.clock()))
         self.api.post("/v1/appPriceSchedules", {
             "data": {"type": "appPriceSchedules", "relationships": {
                 "app": {"data": {"type": "apps", "id": self.app_id}},
                 "baseTerritory": {"data": {"type": "territories", "id": self.base_territory}},
                 "manualPrices": {"data": [{"type": "appPrices", "id": FREE_PRICE_REF}]}}},
-            "included": [{"type": "appPrices", "id": FREE_PRICE_REF, "attributes": {"startDate": None},
+            "included": [{"type": "appPrices", "id": FREE_PRICE_REF, "attributes": {"startDate": start},
                           "relationships": {"appPricePoint": {"data": {"type": "appPricePoints", "id": free["id"]}}}}]})
         self.set("price schedule", "Free set for the base territory")
+
+    def step_availability(self):
+        existing = app_availability(self.api, self.app_id)
+        if existing is not None:
+            count = count_territories(self.api, existing["id"])
+            if count:
+                self.skip("availability", "already set for %d territories" % count)
+                return
+        known = list_territory_ids(self.api)
+        if self.territories == "all":
+            chosen, new_ones = known, True
+        else:
+            chosen, new_ones = [t for t in self.territories.split(",") if t], False
+            unknown = [t for t in chosen if t not in known]
+            if unknown:
+                self.fail("availability", "%d unknown territory code(s) in --territories" % len(unknown))
+                return
+        if not chosen:
+            self.fail("availability", "Apple returned no territories")
+            return
+        refs = ["${local-%s}" % t.lower() for t in chosen]
+        self.api.post("/v2/appAvailabilities", {
+            "data": {"type": "appAvailabilities", "attributes": {"availableInNewTerritories": new_ones},
+                     "relationships": {
+                         "app": {"data": {"type": "apps", "id": self.app_id}},
+                         "territoryAvailabilities": {"data": [{"type": "territoryAvailabilities", "id": r} for r in refs]}}},
+            "included": [{"type": "territoryAvailabilities", "id": r, "attributes": {"available": True},
+                          "relationships": {"territory": {"data": {"type": "territories", "id": t}}}}
+                         for r, t in zip(refs, chosen)]})
+        self.set("availability", "set for %d territories%s" % (len(chosen), ", new territories included" if new_ones else ""))
 
 
 def run_apply(api, out, bundle_id, listing, **kw):
@@ -1481,8 +1641,19 @@ def build_parser():
     chk = sub.add_parser("check", help="read-only report of what is still missing")
     chk.add_argument("--listing", default="AppStore/listing.json",
                      help="path to listing.json (optional for check, ignored when the file is absent)")
+    chk.add_argument("--locale", default=None,
+                     help="target locale, default is the app's primary locale")
     app = sub.add_parser("apply", help="write listing data, build and screenshots")
     app.add_argument("--listing", default="AppStore/listing.json")
+    app.add_argument("--locale", default=None,
+                     help="target locale for the listing text, default is the app's primary locale")
+    app.add_argument("--set-version", default="auto",
+                     help="auto (default): take the version from the newest valid build. keep: leave the "
+                          "version string alone. Or a version such as 0.1.5")
+    app.add_argument("--build-version", default=None,
+                     help="with --set-version auto, choose among the builds of this version")
+    app.add_argument("--territories", default="all",
+                     help="all (default) or a comma separated list of territory codes such as USA,IRL")
     app.add_argument("--steps", default="all",
                      help="comma separated subset of: " + ", ".join(STEP_NAMES) + " (default all)")
     app.add_argument("--build-number", default=None,
@@ -1524,6 +1695,12 @@ def main(argv=None, transport=None, sleep=time.sleep, clock=time.time, stream=No
         listing = None
         out.raw("INFO listing: ignored for check because it is not valid")
     steps, build_number, contact = STEP_NAMES, None, None
+    try:
+        if args.locale and not LOCALE_RE.match(args.locale):
+            raise ConfigError("--locale must look like en-GB")
+    except ConfigError as exc:
+        out.raw("ERROR configuration: %s" % exc)
+        return 2
     if args.command == "apply":
         if listing is None:
             out.raw("ERROR listing: the listing file was not found")
@@ -1536,6 +1713,12 @@ def main(argv=None, transport=None, sleep=time.sleep, clock=time.time, stream=No
                 build_number = str(int(args.build_number))
             if args.screenshots_dir and not os.path.isdir(args.screenshots_dir):
                 raise ConfigError("--screenshots-dir is not a directory")
+            if args.set_version not in ("auto", "keep") and not VERSION_RE.match(args.set_version):
+                raise ConfigError("--set-version must be auto, keep or a version such as 0.1.5")
+            if args.build_version and not VERSION_RE.match(args.build_version):
+                raise ConfigError("--build-version must be a version such as 0.1.5")
+            if not re.match(r"^(all|[A-Z]{3}(,[A-Z]{3})*)$", args.territories):
+                raise ConfigError("--territories must be all or a list of 3 letter codes such as USA,IRL")
         except ConfigError as exc:
             out.raw("ERROR configuration: %s" % exc)
             return 2
@@ -1544,14 +1727,15 @@ def main(argv=None, transport=None, sleep=time.sleep, clock=time.time, stream=No
             out.add_secret(value)
     try:
         if args.command == "check":
-            code = run_check(api, out, bundle, listing)
+            code = run_check(api, out, bundle, listing, locale=args.locale)
             out.write_summary("App Store Connect check")
             return code
         code = run_apply(api, out, bundle, listing, steps=steps, build_number=build_number,
                          screenshots_dir=args.screenshots_dir,
                          replace_screenshots=args.replace_screenshots,
                          base_territory=args.base_territory, contact=contact,
-                         sleep=sleep, clock=clock)
+                         sleep=sleep, clock=clock, locale=args.locale, set_version=args.set_version,
+                         build_version=args.build_version, territories=args.territories)
         out.write_summary("App Store Connect apply")
         return code
     except AuthError as exc:
