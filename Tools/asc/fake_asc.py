@@ -51,6 +51,7 @@ class FakeAsc:
         self.order = {}
         self.upload_requests = []
         self.first_version_rejects_whats_new = True
+        self.corrupt = False
         self.counter = 0
 
     # ------------------------------------------------------------ storage
@@ -365,6 +366,8 @@ class FakeAsc:
         if method != "PUT" or headers.get("Content-Type") != "image/png" \
                 or headers.get("X-Fake-Part") != str(index) or len(body) != op["length"]:
             return 400, {}, b"bad part"
+        if self.corrupt and index == 0:
+            body = bytes([body[0] ^ 0xFF]) + body[1:]
         self.parts.setdefault(shot_id, {})[index] = body
         return 200, {}, b""
 

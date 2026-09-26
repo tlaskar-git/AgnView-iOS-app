@@ -965,6 +965,47 @@ def run_check(api, out, bundle_id, listing):
     return Checker(api, out, bundle_id, listing).run()
 
 
+# ------------------------------------------------------------ screenshots --
+
+def _both(width, height):
+    return {(width, height), (height, width)}
+
+
+_IPHONE_69 = _both(1260, 2736) | _both(1290, 2796) | _both(1320, 2868)
+# Accepted pixel sizes per display type, from Apple's screenshot specifications.
+DISPLAY_SIZES = {
+    "APP_IPHONE_69": _IPHONE_69,
+    "APP_IPHONE_67": _IPHONE_69,
+    "APP_IPHONE_65": _both(1242, 2688) | _both(1284, 2778),
+    "APP_IPHONE_61": _both(1206, 2622) | _both(1179, 2556),
+    "APP_IPHONE_58": _both(1170, 2532) | _both(1125, 2436) | _both(1080, 2340),
+    "APP_IPHONE_55": _both(1242, 2208),
+    "APP_IPHONE_47": _both(750, 1334),
+    "APP_IPAD_PRO_3GEN_129": _both(2048, 2732) | _both(2064, 2752),
+    "APP_IPAD_PRO_129": _both(2048, 2732),
+    "APP_IPAD_PRO_3GEN_11": _both(1488, 2266) | _both(1668, 2388) | _both(1668, 2420) | _both(1640, 2360),
+    "APP_IPAD_105": _both(1668, 2224),
+    "APP_IPAD_97": _both(1536, 2048),
+}
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+UPLOAD_POLL_SECONDS = 2
+UPLOAD_TIMEOUT_SECONDS = 180
+MAX_SCREENSHOT_BYTES = 30 * 1024 * 1024
+
+
+def png_info(data):
+    """Return (width, height, has_alpha) for PNG bytes, or None when they are not a PNG."""
+    if len(data) < 33 or data[:8] != PNG_SIGNATURE or data[12:16] != b"IHDR":
+        return None
+    width, height = struct.unpack(">II", data[16:24])
+    colour_type = data[25]
+    return width, height, colour_type in (4, 6)
+
+
+def natural_key(name):
+    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", name)]
+
+
 # ----------------------------------------------------------------- apply ----
 
 STEP_NAMES = ("localisation", "appinfo", "copyright", "agerating", "contentrights",
@@ -1266,8 +1307,124 @@ class Applier:
             "data": {"type": "appStoreReviewDetails", "id": detail["id"], "attributes": diff}})
         self.set("app review details", "updated: %s" % ", ".join(sorted(diff)))
 
+    # -- screenshots
+    def plan_screenshots(self):
+        """Read and validate the screenshot tree. Returns [(display type, [(name, bytes)])]."""
+        root = self.screenshots_dir
+        folders = sorted(d for d in os.listdir(root) if os.path.isdir(os.path.join(root, d)))
+        plan = []
+        for folder in folders:
+            item = "screenshots %s" % folder
+            sizes = DISPLAY_SIZES.get(folder)
+            if sizes is None:
+                self.fail(item, "the folder name is not a known display type")
+                continue
+            files = sorted((f for f in os.listdir(os.path.join(root, folder)) if f.lower().endswith(".png")),
+                           key=natural_key)
+            if not files:
+                self.skip(item, "the folder holds no PNG files")
+                continue
+            if len(files) > SCREENSHOT_MAX:
+                self.fail(item, "%d files, the maximum is %d" % (len(files), SCREENSHOT_MAX))
+                continue
+            loaded, problems = [], 0
+            for index, name in enumerate(files, 1):
+                path = os.path.join(root, folder, name)
+                if os.path.getsize(path) > MAX_SCREENSHOT_BYTES:
+                    self.fail(item, "file %d is larger than %d MB" % (index, MAX_SCREENSHOT_BYTES // (1024 * 1024)))
+                    problems += 1
+                    continue
+                with open(path, "rb") as fh:
+                    data = fh.read()
+                info = png_info(data)
+                if info is None:
+                    self.fail(item, "file %d is not a PNG" % index)
+                    problems += 1
+                elif (info[0], info[1]) not in sizes:
+                    self.fail(item, "file %d is %dx%d pixels, which %s does not accept" % (index, info[0], info[1], folder))
+                    problems += 1
+                else:
+                    if info[2]:
+                        self.out.line("INFO", item, "file %d has an alpha channel, Apple can reject that" % index)
+                    loaded.append((name, data))
+            if problems == 0:
+                plan.append((folder, loaded))
+        return plan
+
     def step_screenshots(self):
-        self.skip("screenshots", "no --screenshots-dir was given") if not self.screenshots_dir else None
+        if not self.screenshots_dir:
+            self.skip("screenshots", "no --screenshots-dir was given")
+            return
+        plan = self.plan_screenshots()
+        if not plan:
+            self.skip("screenshots", "no valid display type folder to upload")
+            return
+        locs = version_localisations(self.api, self.version["id"])
+        loc = next((l for l in locs if attrs(l).get("locale") == self.locale), None)
+        if loc is None:
+            self.fail("screenshots", "the version localisation %s does not exist: run the localisation step first" % self.locale)
+            return
+        for display_type, files in plan:
+            self.guarded("screenshots %s" % display_type,
+                         lambda dt=display_type, fl=files: self.upload_set(loc["id"], dt, fl))
+
+    def upload_set(self, loc_id, display_type, files):
+        item = "screenshots %s" % display_type
+        sets = screenshot_sets(self.api, loc_id)
+        current = next((s for s in sets if attrs(s).get("screenshotDisplayType") == display_type), None)
+        existing = screenshots_in_set(self.api, current["id"]) if current else []
+        if existing and not self.replace_screenshots:
+            self.skip(item, "%d screenshot(s) already uploaded, use --replace-screenshots to replace them" % len(existing))
+            return
+        for shot in existing:
+            self.api.delete("/v1/appScreenshots/%s" % shot["id"])
+        if existing:
+            self.set(item, "removed %d screenshot(s) for replacement" % len(existing))
+        if current is None:
+            created = self.api.post("/v1/appScreenshotSets", {"data": {
+                "type": "appScreenshotSets", "attributes": {"screenshotDisplayType": display_type},
+                "relationships": {"appStoreVersionLocalization": {
+                    "data": {"type": "appStoreVersionLocalizations", "id": loc_id}}}}})
+            set_id = created["data"]["id"]
+        else:
+            set_id = current["id"]
+        ids = []
+        for index, (name, data) in enumerate(files, 1):
+            ids.append(self.upload_file(index, set_id, name, data))
+        if len(ids) > 1:
+            self.api.patch("/v1/appScreenshotSets/%s/relationships/appScreenshots" % set_id,
+                           {"data": [{"type": "appScreenshots", "id": i} for i in ids]})
+        self.set(item, "uploaded %d screenshot(s) in order" % len(ids))
+
+    def upload_file(self, index, set_id, name, data):
+        """Apple's three steps: reserve, upload the parts, commit with the checksum. Then poll."""
+        reserved = self.api.post("/v1/appScreenshots", {"data": {
+            "type": "appScreenshots", "attributes": {"fileName": name, "fileSize": len(data)},
+            "relationships": {"appScreenshotSet": {"data": {"type": "appScreenshotSets", "id": set_id}}}}})
+        shot = reserved["data"]
+        operations = attrs(shot).get("uploadOperations") or []
+        if not operations:
+            raise ConfigError("file %d: Apple returned no upload operations" % index)
+        for op in operations:
+            headers = {h.get("name"): h.get("value") for h in (op.get("requestHeaders") or []) if h.get("name")}
+            offset, length = int(op.get("offset") or 0), int(op.get("length") or 0)
+            self.api.put_part(op.get("method") or "PUT", op.get("url") or "", headers, data[offset:offset + length])
+        committed = self.api.patch("/v1/appScreenshots/%s" % shot["id"], {"data": {
+            "type": "appScreenshots", "id": shot["id"],
+            "attributes": {"uploaded": True, "sourceFileChecksum": hashlib.md5(data).hexdigest()}}})
+        state = delivery_state(committed.get("data"))
+        deadline = self.clock() + UPLOAD_TIMEOUT_SECONDS
+        while state != "COMPLETE":
+            if state == "FAILED":
+                errors = (attrs(committed.get("data")).get("assetDeliveryState") or {}).get("errors") or []
+                codes = ", ".join(str(e.get("code")) for e in errors if isinstance(e, dict)) or "no detail"
+                raise ConfigError("file %d: Apple could not process the upload (%s). Run again with --replace-screenshots" % (index, codes))
+            if self.clock() > deadline:
+                raise ConfigError("file %d: the upload did not reach COMPLETE within %d seconds" % (index, UPLOAD_TIMEOUT_SECONDS))
+            self.sleep(UPLOAD_POLL_SECONDS)
+            committed = self.api.get("/v1/appScreenshots/%s" % shot["id"])
+            state = delivery_state(committed.get("data"))
+        return shot["id"]
 
     def step_price(self):
         if price_schedule(self.api, self.app_id) is not None:

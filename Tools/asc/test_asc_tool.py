@@ -838,6 +838,191 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual(code, 2)
 
 
+class ScreenshotTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.iphone = fake_asc.make_png(1290, 2796)
+        cls.iphone_b = fake_asc.make_png(1320, 2868)
+        cls.ipad = fake_asc.make_png(2064, 2752)
+
+    def setUp(self):
+        self.tool = ToolRun(CONTACT)
+        self.addCleanup(self.tool.close)
+        self.shots = os.path.join(self.tool.tmp.name, "shots")
+
+    def put(self, folder, name, data):
+        path = os.path.join(self.shots, folder)
+        os.makedirs(path, exist_ok=True)
+        with open(os.path.join(path, name), "wb") as fh:
+            fh.write(data)
+
+    def run_apply(self, fake, extra=None, steps="localisation,screenshots"):
+        argv = ["apply", "--listing", LISTING_PATH, "--steps", steps, "--screenshots-dir", self.shots]
+        return self.tool.run(fake, argv + (extra or []))
+
+    def test_three_step_upload_with_checksum_and_order(self):
+        fake = self.tool.fake(complete=False)
+        self.put("APP_IPHONE_67", "01.png", self.iphone)
+        self.put("APP_IPHONE_67", "02.png", self.iphone_b)
+        self.put("APP_IPHONE_67", "10.png", self.iphone)
+        self.put("APP_IPAD_PRO_3GEN_129", "01.png", self.ipad)
+        code, lines = self.run_apply(fake)
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertIn("SET screenshots APP_IPHONE_67: uploaded 3 screenshot(s) in order", lines)
+        self.assertIn("SET screenshots APP_IPAD_PRO_3GEN_129: uploaded 1 screenshot(s) in order", lines)
+        posts = fake.requests("POST", r"^/v1/appScreenshots$")
+        self.assertEqual([p["body"]["data"]["attributes"]["fileName"] for p in posts],
+                         ["01.png", "01.png", "02.png", "10.png"])
+        self.assertEqual(posts[0]["body"]["data"]["attributes"]["fileSize"], len(self.ipad))
+        rel = posts[0]["body"]["data"]["relationships"]["appScreenshotSet"]["data"]
+        self.assertEqual(rel["type"], "appScreenshotSets")
+        # Step 2: the parts arrived, none carried API credentials, and they add up to the file.
+        expected_parts = sum(-(-len(x) // 5000) for x in (self.iphone, self.iphone_b, self.iphone, self.ipad))
+        self.assertEqual(len(fake.upload_requests), expected_parts)
+        self.assertGreater(expected_parts, 4)
+        for _m, _p, headers, _n in fake.upload_requests:
+            self.assertNotIn("Authorization", headers)
+            self.assertEqual(headers["Content-Type"], "image/png")
+        blobs = list(fake.uploaded.values())
+        self.assertEqual(blobs, [self.ipad, self.iphone, self.iphone_b, self.iphone])
+        # Step 3: commit with the md5 checksum, then poll to COMPLETE.
+        import hashlib
+        commits = fake.requests("PATCH", r"^/v1/appScreenshots/")
+        self.assertEqual(len(commits), 4)
+        self.assertEqual(commits[0]["body"]["data"]["attributes"],
+                         {"uploaded": True, "sourceFileChecksum": hashlib.md5(self.ipad).hexdigest()})
+        self.assertEqual(commits[2]["body"]["data"]["attributes"]["sourceFileChecksum"],
+                         hashlib.md5(self.iphone_b).hexdigest())
+        self.assertGreaterEqual(len(fake.requests("GET", r"^/v1/appScreenshots/")), 4 * 2)
+        for shot in fake.all("appScreenshots"):
+            self.assertEqual(shot["attributes"]["assetDeliveryState"]["state"], "COMPLETE")
+        # Ordering follows the natural file order.
+        order_calls = fake.requests("PATCH", r"/relationships/appScreenshots$")
+        self.assertEqual(len(order_calls), 1)
+        self.assertEqual(len(order_calls[0]["body"]["data"]), 3)
+        self.assertEqual(order_calls[0]["body"]["data"][0]["type"], "appScreenshots")
+        set_body = fake.requests("POST", r"^/v1/appScreenshotSets$")[1]["body"]["data"]
+        self.assertEqual(set_body["attributes"], {"screenshotDisplayType": "APP_IPHONE_67"})
+        self.assertEqual(set_body["relationships"]["appStoreVersionLocalization"]["data"]["type"],
+                         "appStoreVersionLocalizations")
+        # Order of calls for the first file: reserve, parts, commit.
+        first = [(e["method"], e["path"]) for e in fake.log if "appScreenshots" in e["path"]][:3]
+        self.assertEqual(first[0], ("POST", "/v1/appScreenshots"))
+        self.assertEqual(first[1][0], "PATCH")
+
+    def test_upload_then_check_passes(self):
+        fake = self.tool.fake(complete=False)
+        self.put("APP_IPHONE_67", "01.png", self.iphone)
+        self.put("APP_IPAD_PRO_3GEN_129", "01.png", self.ipad)
+        self.assertEqual(self.run_apply(fake)[0], 0)
+        _c, lines = self.tool.run(fake, ["check", "--listing", LISTING_PATH])
+        self.assertTrue(any(l.startswith("PASS screenshots en-US iPhone 6.9 inch: 1 in APP_IPHONE_67") for l in lines))
+        self.assertTrue(any(l.startswith("PASS screenshots en-US iPad 13 inch: 1 in APP_IPAD_PRO_3GEN_129") for l in lines))
+
+    def test_existing_set_is_skipped_unless_replace(self):
+        fake = self.tool.fake()
+        self.put("APP_IPHONE_67", "01.png", self.iphone)
+        code, lines = self.run_apply(fake, steps="screenshots")
+        self.assertEqual(code, 0)
+        self.assertTrue(any(l.startswith("SKIP screenshots APP_IPHONE_67: 2 screenshot(s) already uploaded") for l in lines))
+        self.assertEqual([e for e in fake.log if e["method"] != "GET"], [])
+        code, lines = self.run_apply(fake, ["--replace-screenshots"], steps="screenshots")
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertIn("SET screenshots APP_IPHONE_67: removed 2 screenshot(s) for replacement", lines)
+        self.assertEqual(len(fake.requests("DELETE")), 2)
+        sets = fake.all("appScreenshotSets")
+        iphone = next(s for s in sets if s["attributes"]["screenshotDisplayType"] == "APP_IPHONE_67")
+        self.assertEqual(len(fake.all("appScreenshots", iphone["id"])), 1)
+        self.assertEqual(len(fake.all("appScreenshots", next(s for s in sets if s is not iphone)["id"])), 2,
+                         "the other display type must not be touched")
+
+    def test_wrong_size_is_rejected_before_any_write(self):
+        fake = self.tool.fake(complete=False)
+        self.put("APP_IPHONE_67", "01.png", fake_asc.make_png(1000, 1000))
+        self.put("APP_IPAD_PRO_3GEN_129", "01.png", self.ipad)
+        code, lines = self.run_apply(fake)
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL screenshots APP_IPHONE_67: file 1 is 1000x1000 pixels, which APP_IPHONE_67 does not accept", lines)
+        types = [s["attributes"]["screenshotDisplayType"] for s in fake.all("appScreenshotSets")]
+        self.assertEqual(types, ["APP_IPAD_PRO_3GEN_129"])
+
+    def test_folder_and_file_problems(self):
+        fake = self.tool.fake(complete=False)
+        self.put("APP_IPHONE_99", "01.png", self.iphone)
+        self.put("APP_IPHONE_67", "01.png", b"not a png at all, just text")
+        for i in range(11):
+            self.put("APP_IPAD_PRO_3GEN_129", "%02d.png" % i, b"x")
+        code, lines = self.run_apply(fake)
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL screenshots APP_IPHONE_99: the folder name is not a known display type", lines)
+        self.assertIn("FAIL screenshots APP_IPHONE_67: file 1 is not a PNG", lines)
+        self.assertIn("FAIL screenshots APP_IPAD_PRO_3GEN_129: 11 files, the maximum is 10", lines)
+        self.assertEqual(fake.all("appScreenshotSets"), [])
+
+    def test_alpha_channel_is_reported_not_blocked(self):
+        fake = self.tool.fake(complete=False)
+        self.put("APP_IPHONE_67", "01.png", fake_asc.make_png(1290, 2796, alpha=True))
+        code, lines = self.run_apply(fake)
+        self.assertEqual(code, 0)
+        self.assertIn("INFO screenshots APP_IPHONE_67: file 1 has an alpha channel, Apple can reject that", lines)
+
+    def test_checksum_failure_reported(self):
+        fake = self.tool.fake(complete=False)
+        fake.corrupt = True
+        self.put("APP_IPHONE_67", "01.png", self.iphone)
+        code, lines = self.run_apply(fake)
+        self.assertEqual(code, 1)
+        self.assertTrue(any(l.startswith("FAIL screenshots APP_IPHONE_67: file 1: Apple could not process the upload (CHECKSUM)") for l in lines))
+
+    def test_poll_timeout(self):
+        fake = self.tool.fake(complete=False, upload_polls=10 ** 6)
+        self.put("APP_IPHONE_67", "01.png", self.iphone)
+        code, lines = self.run_apply(fake)
+        self.assertEqual(code, 1)
+        self.assertTrue(any("did not reach COMPLETE within 180 seconds" in l for l in lines))
+
+    def test_upload_host_error_reported(self):
+        fake = self.tool.fake(complete=False)
+        self.put("APP_IPHONE_67", "01.png", self.iphone)
+        original = fake.handle_upload
+
+        def refuse(method, path, headers, body):
+            return 403, {}, b"denied"
+        fake.handle_upload = refuse
+        code, lines = self.run_apply(fake)
+        fake.handle_upload = original
+        self.assertEqual(code, 1)
+        self.assertTrue(any(l.startswith("FAIL screenshots APP_IPHONE_67: HTTP 403") for l in lines))
+
+    def test_missing_localisation_and_no_dir(self):
+        fake = self.tool.fake(complete=False)
+        self.put("APP_IPHONE_67", "01.png", self.iphone)
+        code, lines = self.run_apply(fake, steps="screenshots")
+        self.assertEqual(code, 1)
+        self.assertTrue(any("run the localisation step first" in l for l in lines))
+        code, lines = self.tool.run(self.tool.fake(complete=False),
+                                    ["apply", "--listing", LISTING_PATH, "--steps", "screenshots"])
+        self.assertEqual(code, 0)
+        self.assertIn("SKIP screenshots: no --screenshots-dir was given", lines)
+        code, _l = self.tool.run(self.tool.fake(complete=False),
+                                 ["apply", "--listing", LISTING_PATH, "--screenshots-dir", os.path.join(self.shots, "nope")])
+        self.assertEqual(code, 2)
+
+    def test_file_names_and_ids_not_in_output(self):
+        fake = self.tool.fake(complete=False)
+        self.put("APP_IPHONE_67", "secretname-01.png", self.iphone)
+        _c, lines = self.run_apply(fake)
+        self.assertNotIn("secretname", "\n".join(lines))
+
+    def test_png_helpers(self):
+        self.assertEqual(t.png_info(self.iphone), (1290, 2796, False))
+        self.assertEqual(t.png_info(fake_asc.make_png(10, 20, alpha=True)), (10, 20, True))
+        self.assertIsNone(t.png_info(b"GIF89a" + b"0" * 60))
+        self.assertEqual(sorted(["10.png", "2.png", "01.png"], key=t.natural_key), ["01.png", "2.png", "10.png"])
+        self.assertIn((1290, 2796), t.DISPLAY_SIZES["APP_IPHONE_67"])
+        self.assertIn((2752, 2064), t.DISPLAY_SIZES["APP_IPAD_PRO_3GEN_129"])
+
+
 class ListingTests(unittest.TestCase):
     def load(self):
         with open(LISTING_PATH, encoding="utf-8") as fh:
