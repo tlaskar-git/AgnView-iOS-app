@@ -1563,6 +1563,12 @@ def main(argv=None, transport=None, sleep=time.sleep, clock=time.time, stream=No
     except ConfigError as exc:
         out.raw("ERROR configuration: %s" % exc)
         return 2
+    except AscError as exc:
+        out.raw("ERROR api: %s" % exc.describe())
+        return 2 if args.command == "check" else 1
+    except Exception as exc:  # noqa: BLE001 - never let a traceback reach a public log
+        out.raw("ERROR unexpected: %s" % type(exc).__name__)
+        return 2 if args.command == "check" else 1
 
 
 if __name__ == "__main__":

@@ -517,6 +517,21 @@ class CheckTests(unittest.TestCase):
         code, lines = self.check(fake)
         self.assertEqual(code, 2)
 
+    def test_server_error_on_first_call_exit_2_without_traceback(self):
+        fake = self.tool.fake()
+        fake.failures.append(("GET", r"^/v1/apps$", 500, [{"code": "UNEXPECTED_ERROR", "title": "Oops"}]))
+        code, lines = self.check(fake)
+        self.assertEqual(code, 2)
+        self.assertTrue(any(l.startswith("ERROR api: HTTP 500") for l in lines))
+        self.assertFalse(any("Traceback" in l for l in lines))
+
+    def test_unexpected_exception_prints_type_only(self):
+        def broken(*_a):
+            raise RuntimeError("secret detail " + FAKE_BUNDLE)
+        code, lines = self.tool.run(broken, ["check"])
+        self.assertEqual(code, 2)
+        self.assertEqual(lines, ["ERROR unexpected: RuntimeError"])
+
     def test_unreachable_exit_2(self):
         def down(*_a):
             raise urllib.error.URLError("down")
