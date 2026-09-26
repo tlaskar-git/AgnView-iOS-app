@@ -13,11 +13,11 @@ final class NavState: ObservableObject {
     private var toastTask: Task<Void, Never>?
 
     func showToast(_ text: String) {
-        toast = text
+        withAnimation(.easeOut(duration: 0.25)) { toast = text }
         toastTask?.cancel()
         toastTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 2_400_000_000)
-            if !Task.isCancelled { self?.toast = nil }
+            if !Task.isCancelled { withAnimation(.easeOut(duration: 0.25)) { self?.toast = nil } }
         }
         UIAccessibility.post(notification: .announcement, argument: text)
     }

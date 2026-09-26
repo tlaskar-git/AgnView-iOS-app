@@ -14,25 +14,7 @@ struct RootView: View {
         layout
             .environmentObject(nav)
             .tint(Theme.link)
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-                nav.keyboardVisible = true
-            }
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-                nav.keyboardVisible = false
-            }
-            .overlay(alignment: .top) {
-                if let text = nav.toast {
-                    ToastView(text: text)
-                        .padding(.top, HeaderMetrics.rowHeight + 8)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
-            }
-            .animation(.easeOut(duration: 0.25), value: nav.toast)
-            .sheet(isPresented: $nav.showPairing) {
-                PairingSheet()
-                    .environmentObject(model)
-                    .environmentObject(nav)
-            }
+            .modifier(NavChrome(nav: nav))
     }
 
     @ViewBuilder
@@ -54,14 +36,48 @@ struct RootView: View {
                 }
             }
         } else {
-            phoneLayout
+            PhoneShell(nav: nav)
         }
     }
+}
 
-    /// The native TabView keeps each tab's own stack and scroll position. Its
-    /// bar is hidden and the floating bar draws over it. Each screen adds a
-    /// bottom inset the size of the bar, so nothing hides behind it.
-    private var phoneLayout: some View {
+/// The keyboard watcher, the toast and the pairing sheet. A modifier of its own
+/// that observes the navigation state directly, so a change shows at once.
+private struct NavChrome: ViewModifier {
+    @ObservedObject var nav: NavState
+    @EnvironmentObject private var model: AppModel
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                nav.keyboardVisible = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                nav.keyboardVisible = false
+            }
+            .overlay(alignment: .top) {
+                if let text = nav.toast {
+                    ToastView(text: text)
+                        .padding(.top, HeaderMetrics.rowHeight + 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .sheet(isPresented: $nav.showPairing) {
+                PairingSheet()
+                    .environmentObject(model)
+                    .environmentObject(nav)
+            }
+    }
+}
+
+/// The iPhone shell. The native TabView keeps each tab's own stack and scroll
+/// position. Its bar is hidden and the floating bar draws over it. Each screen
+/// adds a bottom inset the size of the bar (see TabBarClearance), so nothing
+/// hides behind it. It observes the navigation state itself.
+private struct PhoneShell: View {
+    @ObservedObject var nav: NavState
+
+    var body: some View {
         let safeBottom = SafeArea.bottom
         return TabView(selection: $nav.screen) {
             ForEach(Screen.phoneOrder) { screen in
@@ -80,7 +96,6 @@ struct RootView: View {
                 .opacity(nav.keyboardVisible ? 0 : 1)
                 .allowsHitTesting(!nav.keyboardVisible)
                 .accessibilityHidden(nav.keyboardVisible)
-                .animation(.easeInOut(duration: 0.25), value: nav.keyboardVisible)
         }
     }
 }
