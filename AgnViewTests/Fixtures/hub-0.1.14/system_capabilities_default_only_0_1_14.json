@@ -1,0 +1,30 @@
+{
+  "installed_clis": [
+    {
+      "id": "claude_code",
+      "name": "Claude Code",
+      "available": true
+    }
+  ],
+  "models": {
+    "claude_code": [
+      {
+        "id": "default",
+        "name": "Default"
+      }
+    ],
+    "all": [
+      {
+        "id": "auto",
+        "name": "Auto"
+      }
+    ]
+  },
+  "efforts": [
+    "low",
+    "medium",
+    "high"
+  ],
+  "efforts_by_provider": {},
+  "current_cwd": "/home/example/project"
+}

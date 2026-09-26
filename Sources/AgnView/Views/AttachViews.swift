@@ -122,7 +122,7 @@ struct AttachSheet: View {
     @ViewBuilder
     private var computerRows: some View {
         if !model.canAttachFromComputer {
-            Text(UserMessages.needsSameWiFi)
+            Text(UserMessages.computerFilesNeedSameWiFi)
                 .font(.footnote)
                 .foregroundStyle(Theme.textSecondary)
                 .accessibilityIdentifier("attach-unavailable")

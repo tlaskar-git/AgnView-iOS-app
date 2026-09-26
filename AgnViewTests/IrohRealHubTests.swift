@@ -63,7 +63,8 @@ final class IrohRealHubTests: XCTestCase {
         // Hello arrived: the hub lists the api capability.
         let consoleSession = try XCTUnwrap(session as? ConsoleStreamSession)
         XCTAssertTrue(consoleSession.hello.offersAPI, "hello lists the api capability")
-        XCTAssertEqual(session.capabilities, .irohAPI)
+        XCTAssertEqual(session.capabilities, .irohGranted(hello: consoleSession.hello.capabilities))
+        XCTAssertTrue(session.capabilities.isSuperset(of: Set<Capability>.irohAPI))
         XCTAssertTrue([TransportRoute.direct, .relay].contains(session.route))
         report("E2E-ROUTE \(session.route.rawValue)")
 
@@ -189,6 +190,36 @@ final class IrohRealHubTests: XCTestCase {
         }
         XCTAssertTrue(Set<Capability>.irohAPI.isDisjoint(with: Capability.lanOnly))
         report("E2E-PASS LAN only calls refused over iroh")
+    }
+
+    /// Hub 0.1.13 or later: the hello lists "uploads", the session grants
+    /// pipeline create and delete, and both work over iroh through the same
+    /// client calls the Pipelines screen makes.
+    func testRealHubCreatesAndDeletesAPipelineOverIroh() async throws {
+        let session = try await connect()
+        addTeardownBlock { await session.close() }
+        let consoleSession = try XCTUnwrap(session as? ConsoleStreamSession)
+        let names = consoleSession.hello.capabilities ?? []
+        report("E2E-STEP hello capabilities \(names.sorted().joined(separator: ","))")
+        XCTAssertTrue(names.contains(HelloCapability.uploads), "the hub under test is 0.1.13 or later")
+        XCTAssertTrue(session.capabilities.contains(.manageJobs), "pipeline create is granted over iroh")
+        let client = HubClient(api: try XCTUnwrap(session.api))
+
+        var draft = PipelineDraft()
+        draft.title = "e2e iroh pipeline"
+        draft.tasks[0].title = "Example task"
+        draft.tasks[0].agent = "claude_code"
+        XCTAssertTrue(draft.isValid, "the draft is valid: \(draft.issues())")
+        let job = try await client.createJob(draft.requestBody())
+        XCTAssertEqual(job.title, "e2e iroh pipeline")
+        let listed = try await client.jobs()
+        XCTAssertTrue(listed.contains { $0.id == job.id }, "the new pipeline is listed")
+        report("E2E-PASS pipeline created over iroh")
+
+        try await client.deleteJob(id: job.id)
+        let after = try await client.jobs()
+        XCTAssertFalse(after.contains { $0.id == job.id }, "the pipeline is gone")
+        report("E2E-PASS pipeline deleted over iroh")
     }
 
     func testRealHubRejectsAWrongKey() async throws {

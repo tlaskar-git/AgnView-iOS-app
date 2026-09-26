@@ -41,7 +41,8 @@ final class ConsoleStreamSession: HubSession {
     /// Reads until the hello frame. An error frame before hello throws the
     /// mapped error: the hub's auth failure detail gives `.unauthorised`.
     /// When `makeAPI` is given and the hello frame lists "api", the session
-    /// has the full capability set and offers that API route. Otherwise it
+    /// has the iroh API set (with pipeline create and delete when the hello
+    /// also lists "uploads") and offers that API route. Otherwise it
     /// keeps `capabilities` (console only for iroh), as an older hub needs.
     static func open(capabilities: Set<Capability> = .iroh,
                      fallbackRoute: TransportRoute = .relay,
@@ -82,7 +83,7 @@ final class ConsoleStreamSession: HubSession {
         var granted = capabilities
         if opened.offersAPI, let makeAPI {
             api = makeAPI()
-            granted = .irohAPI
+            granted = .irohGranted(hello: opened.capabilities)
         }
         let session = ConsoleStreamSession(capabilities: granted, hello: opened, api: api,
                                            route: route, onClose: onClose)
