@@ -1,0 +1,26 @@
+{
+  "id": "job-example",
+  "title": "Example pipeline",
+  "description": "Placeholder",
+  "status": "pending",
+  "created_at": "2026-09-25T10:00:00.000000+00:00",
+  "updated_at": "2026-09-25T10:00:00.000000+00:00",
+  "tasks": {
+    "task-a": {
+      "id": "task-a",
+      "job_id": "job-example",
+      "title": "Build",
+      "description": "Build it\n[Context Files: README.md]",
+      "assigned_agent": "claude_code",
+      "executed_by": null,
+      "dependencies": [],
+      "status": "ready",
+      "output_summary": null,
+      "artifacts": [],
+      "revisions": [],
+      "created_at": "2026-09-25T10:00:00.000000+00:00",
+      "updated_at": "2026-09-25T10:00:00.000000+00:00",
+      "completed_at": null
+    }
+  }
+}

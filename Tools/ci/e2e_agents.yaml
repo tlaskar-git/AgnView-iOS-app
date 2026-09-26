@@ -1,0 +1,29 @@
+# Agent adapters for the CI hubs. The same as the hub default, except that the
+# codex command places {model} and {effort}, so a test can see the model and
+# effort the app asked for in the arguments the stub agent prints. An empty
+# placeholder is dropped by the hub together with its flag.
+
+agents:
+  claude_code:
+    display: Claude Code
+    command: ["claude", "-p", "{prompt}"]
+    cwd: "{workspace}"
+    icon: sparkles
+    colour: "#FBBF24"
+    enabled: true
+
+  codex:
+    display: Codex / ChatGPT
+    command: ["codex", "exec", "--skip-git-repo-check", "{prompt}", "-m", "{model}", "-c", "reasoning_effort={effort}"]
+    cwd: "{workspace}"
+    icon: terminal
+    colour: "#10A37F"
+    enabled: true
+
+  antigravity:
+    display: AntiGravity
+    command: ["agy", "--print", "{prompt}", "--dangerously-skip-permissions"]
+    cwd: "{workspace}"
+    icon: compass
+    colour: "#8B5CF6"
+    enabled: true

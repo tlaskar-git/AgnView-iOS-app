@@ -30,6 +30,30 @@ enum Format {
         age(seconds: now.timeIntervalSince(date))
     }
 
+    /// 96 -> "96%", 8.5 -> "8.5%".
+    static func percent(_ value: Double) -> String {
+        let text = String(format: "%.1f", value)
+        return (text.hasSuffix(".0") ? String(text.dropLast(2)) : text) + "%"
+    }
+
+    /// "Updated just now", "Updated 5 min ago" or "Not updated yet".
+    static func updated(from date: Date?, to now: Date) -> String {
+        guard let date else { return "Not updated yet" }
+        return "Updated " + age(from: date, to: now)
+    }
+
+    /// "Last reading 5 min ago", from an age in seconds.
+    static func lastReading(seconds: TimeInterval) -> String {
+        "Last reading " + age(seconds: seconds)
+    }
+
+    /// The age of a usage reading now: the age the hub reported when it
+    /// answered, plus the time since the app took the answer. Without a hub
+    /// age, only the time since the app took it.
+    static func readingAge(hubAgeSeconds: Double?, takenAt: Date, now: Date) -> TimeInterval {
+        max(0, hubAgeSeconds ?? 0) + max(0, now.timeIntervalSince(takenAt))
+    }
+
     /// "Last reading 5 min ago".
     static func lastReading(from date: Date, to now: Date) -> String {
         "Last reading " + age(from: date, to: now)
@@ -59,6 +83,7 @@ enum Format {
         case "claude": return "Claude"
         case "chatgpt": return "ChatGPT"
         case "gemini": return "Gemini"
+        case "antigravity": return "AntiGravity"
         default: return raw.capitalized
         }
     }

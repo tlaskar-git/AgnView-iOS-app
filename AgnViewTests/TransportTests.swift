@@ -139,7 +139,9 @@ final class TransportTests: XCTestCase {
     }
 
     func testCapabilities() {
-        XCTAssertEqual(Set<Capability>.lan, [.consoleStream, .dispatch, .usage, .jobs, .sessions])
+        XCTAssertEqual(Set<Capability>.lan, [.consoleStream, .dispatch, .usage, .jobs, .sessions,
+                                              .catalogue, .manageJobs, .usageRefresh])
+        XCTAssertEqual(Set<Capability>.irohAPI, [.consoleStream, .dispatch, .usage, .jobs, .sessions])
         XCTAssertEqual(Set<Capability>.iroh, [.consoleStream])
     }
 

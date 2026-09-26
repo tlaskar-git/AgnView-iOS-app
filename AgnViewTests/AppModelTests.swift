@@ -356,12 +356,14 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.connection, .online(.lan, lanCaps))
     }
 
-    func testStatusLineUsesTheTransportLabel() {
-        let status = MobileStatus(status: "ok", service: "AgnView", version: "",
-                                  transportLabel: "LAN", resolvedTransport: "lan")
-        XCTAssertEqual(AppModel.statusText(status), "Connected via LAN: ok")
-        XCTAssertEqual(AppModel.statusText(MobileStatus(status: "ok", service: "x", version: "")),
-                       "Connected: ok")
+    func testStatusLineNamesTheHubAndLeavesTheTransportToThePill() {
+        let real = MobileStatus(status: "healthy", service: "AgnView", version: "",
+                                transportLabel: "Loopback only", resolvedTransport: "offline")
+        XCTAssertEqual(AppModel.statusText(real, hubName: "Office PC"), "Office PC is healthy")
+        XCTAssertFalse(AppModel.statusText(real, hubName: "Office PC").contains("Loopback"))
+        XCTAssertEqual(AppModel.statusText(MobileStatus(status: "degraded", service: "x", version: ""),
+                                           hubName: "Office PC"), "Office PC is degraded")
+        XCTAssertEqual(AppModel.statusText(real, hubName: "  "), "The hub is healthy")
     }
 
     func testDispatchTransportFailureIsWrapped() async {
@@ -646,4 +648,243 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(model.hubs.isEmpty)
     }
     #endif
+
+    // MARK: Phase A
+
+    /// Answers some requests itself and leaves the rest to the default stubs.
+    private func stub(_ answer: @escaping (RecordedRequest) -> StubURLProtocol.Answer?) {
+        let good = StubURLProtocol.handler
+        StubURLProtocol.handler = { request in answer(request) ?? good?(request) ?? .response(404, Data()) }
+    }
+
+    private func irohAPIModel(_ api: FakeAPITransport) async -> AppModel {
+        api.route("GET", "/api/mobile/status", 200, SampleJSON.status)
+        api.route("GET", "/api/usage/accounts", 200, SampleJSON.usage)
+        api.route("GET", "/api/jobs", 200, SampleJSON.jobs)
+        api.route("GET", "/api/console/live-sessions", 200, SampleJSON.liveSessions)
+        api.route("POST", "/api/console/dispatch", 200, SampleJSON.dispatch)
+        let session = ScriptedSession(route: .direct, capabilities: .irohAPI, api: api)
+        let model = makeModel(lan: TransportScript([TransportScript.fail(.unreachable)]),
+                              iroh: TransportScript([TransportScript.session(session)]))
+        model.pair(url: pairingURL())
+        await waitForState(model, .online(.direct, .irohAPI))
+        return model
+    }
+
+    private func draft() -> PipelineDraft {
+        var draft = PipelineDraft(idSeed: "ab12")
+        draft.title = "Example pipeline"
+        draft.tasks[0].title = "Build"
+        return draft
+    }
+
+    func testLANSessionCanCreateAttachAndRefreshUsageOnTheHub() async {
+        let session = ScriptedSession(route: .lan)
+        let model = makeModel(lan: TransportScript([TransportScript.session(session)]))
+        await pairAndConnect(model, lanSession: session)
+        XCTAssertTrue(model.canManageJobs)
+        XCTAssertTrue(model.canAttachFromComputer)
+        XCTAssertTrue(model.canRefreshUsageOnHub)
+        XCTAssertTrue(model.canActOnTasks)
+        XCTAssertNil(model.pipelineCreateNotice)
+        XCTAssertEqual(model.features, .phaseA)
+    }
+
+    func testIrohSessionKeepsTheLANOnlyCallsOff() async {
+        let model = await irohAPIModel(FakeAPITransport())
+        XCTAssertFalse(model.canManageJobs)
+        XCTAssertFalse(model.canAttachFromComputer)
+        XCTAssertFalse(model.canRefreshUsageOnHub)
+        XCTAssertTrue(model.canActOnTasks, "revision and fail are on the iroh allowlist")
+        XCTAssertEqual(model.pipelineCreateNotice, UserMessages.needsSameWiFi)
+        do {
+            _ = try await model.createPipeline(draft())
+            XCTFail("creating a pipeline needs the LAN")
+        } catch {
+            XCTAssertEqual(error as? HubError, .transport(.notSupported))
+        }
+        do {
+            _ = try await model.hubFiles()
+            XCTFail("listing computer files needs the LAN")
+        } catch {
+            XCTAssertEqual(error as? HubError, .transport(.notSupported))
+        }
+        await model.refreshCatalogue()
+        XCTAssertEqual(model.catalogue, .empty)
+        XCTAssertEqual(model.catalogue.effortOptions(for: "codex").map { $0.id }, ["", "low", "medium", "high"])
+    }
+
+    func testCatalogueLoadsOverLAN() async {
+        stub { request in
+            request.url.path == "/api/system/capabilities"
+                ? .response(200, Data(#"{"models":{"codex":[{"id":"example-codex","name":"Example Codex"}]},"efforts":["low","high"]}"#.utf8))
+                : nil
+        }
+        let session = ScriptedSession(route: .lan)
+        let model = makeModel(lan: TransportScript([TransportScript.session(session)]))
+        await pairAndConnect(model, lanSession: session)
+        await model.refreshCatalogue()
+        XCTAssertEqual(model.catalogue.modelOptions(for: "codex").map { $0.id }, ["", "example-codex"])
+        XCTAssertEqual(model.catalogue.effortOptions(for: "codex").map { $0.id }, ["", "low", "high"])
+    }
+
+    func testHubFilesListOverLAN() async throws {
+        stub { request in
+            request.url.path == "/api/system/files"
+                ? .response(200, Data(#"{"files":["a.txt","b/c.txt"],"cwd":"/example"}"#.utf8))
+                : nil
+        }
+        let session = ScriptedSession(route: .lan)
+        let model = makeModel(lan: TransportScript([TransportScript.session(session)]))
+        await pairAndConnect(model, lanSession: session)
+        let files = try await model.hubFiles()
+        XCTAssertEqual(files, ["a.txt", "b/c.txt"])
+    }
+
+    func testCreatePipelineOverLANPostsThenReadsTheList() async throws {
+        stub { request in
+            request.url.path == "/api/jobs" && request.method == "POST"
+                ? .response(200, Data(phaseACreatedJob.utf8))
+                : nil
+        }
+        let session = ScriptedSession(route: .lan)
+        let model = makeModel(lan: TransportScript([TransportScript.session(session)]))
+        await pairAndConnect(model, lanSession: session)
+        let job = try await model.createPipeline(draft())
+        XCTAssertEqual(job.id, "job-new")
+        let requests = StubURLProtocol.requests
+        let post = try XCTUnwrap(requests.lastIndex { $0.url.path == "/api/jobs" && $0.method == "POST" })
+        XCTAssertTrue(requests[(post + 1)...].contains { $0.url.path == "/api/jobs" && $0.method == "GET" },
+                      "the list is read again after the create")
+    }
+
+    func testCreatePipelineRefusalKeepsTheHubReason() async {
+        stub { request in
+            request.url.path == "/api/jobs" && request.method == "POST"
+                ? .response(400, Data(#"{"detail":"Dependency cycle detected involving 'a' and 'b'."}"#.utf8))
+                : nil
+        }
+        let session = ScriptedSession(route: .lan)
+        let model = makeModel(lan: TransportScript([TransportScript.session(session)]))
+        await pairAndConnect(model, lanSession: session)
+        do {
+            _ = try await model.createPipeline(draft())
+            XCTFail("expected a refusal")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "Dependency cycle detected involving 'a' and 'b'.")
+            XCTAssertTrue(error is HubRejection)
+        }
+        XCTAssertEqual(model.connection, .online(.lan, lanCaps), "a refused create leaves the connection alone")
+    }
+
+    func testDeletePipelineUsesDeleteOverLAN() async throws {
+        stub { request in
+            request.url.path == "/api/jobs/job-1" && request.method == "DELETE"
+                ? .response(200, Data(#"{"message":"deleted"}"#.utf8))
+                : nil
+        }
+        let session = ScriptedSession(route: .lan)
+        let model = makeModel(lan: TransportScript([TransportScript.session(session)]))
+        await pairAndConnect(model, lanSession: session)
+        try await model.deletePipeline(id: "job-1")
+        XCTAssertTrue(StubURLProtocol.requests.contains { $0.method == "DELETE" && $0.url.path == "/api/jobs/job-1" })
+    }
+
+    func testRevisionAndFailGoThroughTheAPIOverIroh() async throws {
+        let api = FakeAPITransport()
+        api.route("POST", "/api/tasks/task-1/request-revision", 200, "{}")
+        api.route("POST", "/api/tasks/task-1/fail", 200, "{}")
+        let model = await irohAPIModel(api)
+        try await model.requestRevision(taskId: "task-1", feedback: "Tighten it")
+        try await model.failTask(taskId: "task-1", reason: "Wrong approach")
+        XCTAssertTrue(api.calls.contains { $0.method == "POST" && $0.path == "/api/tasks/task-1/request-revision" })
+        XCTAssertTrue(api.calls.contains { $0.method == "POST" && $0.path == "/api/tasks/task-1/fail" })
+        do {
+            try await model.deletePipeline(id: "job-1")
+            XCTFail("delete is not on the iroh allowlist")
+        } catch {
+            XCTAssertEqual(error as? HubError, .transport(.notSupported))
+        }
+        XCTAssertFalse(api.calls.contains { $0.method == "DELETE" })
+    }
+
+    func testUsageRefreshAsksTheHubToReadAgainOverLAN() async {
+        stub { request in
+            request.url.path == "/api/usage/refresh-all" && request.method == "POST"
+                ? .response(200, Data(#"[{"id":"acc-9","name":"Example","provider":"claude"}]"#.utf8))
+                : nil
+        }
+        let session = ScriptedSession(route: .lan)
+        let model = makeModel(lan: TransportScript([TransportScript.session(session)]))
+        await pairAndConnect(model, lanSession: session)
+        await waitUntil("usage") { model.usageSnapshot != nil }
+        XCTAssertEqual(model.usage.count, 2)
+        await model.refreshUsageFromHub()
+        XCTAssertEqual(model.usage.map { $0.id }, ["acc-9"])
+        XCTAssertFalse(model.usageRefreshing)
+    }
+
+    func testUsageRefreshFallsBackToReadingAccountsWhenTheHubRefreshFails() async {
+        stub { request in
+            request.url.path == "/api/usage/refresh-all" ? .response(500, Data("boom".utf8)) : nil
+        }
+        let session = ScriptedSession(route: .lan)
+        let model = makeModel(lan: TransportScript([TransportScript.session(session)]))
+        await pairAndConnect(model, lanSession: session)
+        await model.refreshUsageFromHub()
+        XCTAssertEqual(model.usage.count, 2)
+        XCTAssertNil(model.usageState.failureMessage)
+    }
+
+    func testUsageRefreshOverIrohOnlyReadsTheAccounts() async {
+        let api = FakeAPITransport()
+        let model = await irohAPIModel(api)
+        await waitUntil("usage over iroh") { model.usageSnapshot != nil }
+        await model.refreshUsageFromHub()
+        XCTAssertFalse(api.calls.contains { $0.path == "/api/usage/refresh-all" })
+        XCTAssertGreaterThanOrEqual(api.calls.filter { $0.path == "/api/usage/accounts" }.count, 2)
+    }
+
+    func testSessionsRefreshReadsLogsThenLiveSessionsAndStampsTheTime() async throws {
+        stub { request in
+            request.url.path == "/api/console/logs"
+                ? .response(200, Data(#"[{"id":41,"agent":"codex","source":"stdout","content":"from the backfill","timestamp":"2026-01-01T00:00:00Z","session_id":"sess-41"}]"#.utf8))
+                : nil
+        }
+        let session = ScriptedSession(route: .lan)
+        let model = makeModel(lan: TransportScript([TransportScript.session(session)]))
+        await pairAndConnect(model, lanSession: session)
+        await waitUntil("first read") { model.sessionsUpdatedAt != nil }
+        nowBox.date = nowBox.date.addingTimeInterval(90)
+        await model.refreshSessionsNow()
+        XCTAssertEqual(model.sessionsUpdatedAt, nowBox.date)
+        XCTAssertTrue(model.consoleLines.contains { $0.content == "from the backfill" })
+        let logs = try XCTUnwrap(StubURLProtocol.requests.last { $0.url.path == "/api/console/logs" })
+        XCTAssertEqual(logs.url.query?.hasPrefix("agent=all&limit=250"), true)
+        XCTAssertEqual(model.sessions.first?.id, "session-1")
+    }
+
+    func testSendCarriesModelEffortAndFiles() async throws {
+        let session = ScriptedSession(route: .lan)
+        let model = makeModel(lan: TransportScript([TransportScript.session(session)]))
+        await pairAndConnect(model, lanSession: session)
+        let sent = await model.send(agent: "codex", prompt: "Do it", model: "example-codex", effort: "low",
+                                    files: ["a.txt"])
+        XCTAssertTrue(sent)
+        let post = try XCTUnwrap(StubURLProtocol.requests.last { $0.url.path == "/api/console/dispatch" })
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(post.body)) as? [String: Any])
+        XCTAssertEqual(object["model"] as? String, "example-codex")
+        XCTAssertEqual(object["effort"] as? String, "low")
+        XCTAssertEqual(object["files"] as? [String], ["a.txt"])
+    }
+
+    func testStatusLineNamesTheHubOnceItAnswers() async {
+        let session = ScriptedSession(route: .lan)
+        let model = makeModel(lan: TransportScript([TransportScript.session(session)]))
+        await pairAndConnect(model, lanSession: session)
+        await waitUntil("status line") { model.statusLine == "Test Hub is healthy" }
+        XCTAssertFalse(model.statusLine.contains("Loopback"))
+    }
 }
+
+private let phaseACreatedJob = #"{"id":"job-new","title":"Example pipeline","description":"","status":"pending","tasks":{"task-a":{"id":"task-a","job_id":"job-new","title":"Build","assigned_agent":"codex","status":"ready","dependencies":[]}}}"#

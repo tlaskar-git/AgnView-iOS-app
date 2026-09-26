@@ -13,10 +13,19 @@ home="$RUNNER_TEMP/home-e2e"
 stubs="$RUNNER_TEMP/stubs-e2e"
 mkdir -p "$home" "$stubs"
 
-for name in claude codex; do
-  printf '#!/bin/sh\necho "stub agent line one"\necho "stub agent line two"\nexit 0\n' > "$stubs/$name"
-  chmod +x "$stubs/$name"
-done
+printf '#!/bin/sh
+echo "stub agent line one"
+echo "stub agent line two"
+exit 0
+' > "$stubs/claude"
+chmod +x "$stubs/claude"
+# The codex stub prints the arguments it was given as a Codex JSON event.
+cp "$(dirname "$0")/stub_codex.sh" "$stubs/codex"
+chmod +x "$stubs/codex"
+
+# Agent adapters that place the model and effort in the codex command.
+mkdir -p "$home/.agnview"
+cp "$(dirname "$0")/e2e_agents.yaml" "$home/.agnview/agents.yaml"
 
 port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
 

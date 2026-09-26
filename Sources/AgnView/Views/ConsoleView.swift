@@ -127,6 +127,7 @@ struct ConsoleRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("console-row")
     }
 }
 
@@ -135,11 +136,69 @@ private struct AgentOption: Identifiable {
     let name: String
 }
 
+/// A rounded chip that shows a title and opens a menu. Used for Model and
+/// Effort in the composer and in the keyboard toolbar.
+struct ChipLabel: View {
+    let title: String
+    let symbol: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: symbol)
+                .imageScale(.small)
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+            Image(systemName: "chevron.down")
+                .imageScale(.small)
+        }
+        .foregroundStyle(Theme.textMain)
+        .padding(.horizontal, 12)
+        .frame(minHeight: 36)
+        .background(Capsule().fill(Theme.raised))
+    }
+}
+
+/// A menu of options with a check mark on the chosen one. Options carry an
+/// identifier of the form <prefix>-option-<id> so tests can pick one.
+struct OptionMenu: View {
+    let title: String
+    let symbol: String
+    let options: [ChoiceOption]
+    let selectedId: String
+    let identifier: String
+    let onSelect: (String) -> Void
+
+    var body: some View {
+        Menu {
+            ForEach(options) { option in
+                Button {
+                    onSelect(option.id)
+                } label: {
+                    if option.id == selectedId {
+                        Label(option.name, systemImage: "checkmark")
+                    } else {
+                        Text(option.name)
+                    }
+                }
+                .accessibilityIdentifier(identifier + "-option-" + (option.id.isEmpty ? "default" : option.id))
+            }
+        } label: {
+            ChipLabel(title: title, symbol: symbol)
+        }
+        .accessibilityLabel(identifier.contains("effort") ? "Effort" : "Model")
+        .accessibilityValue(title)
+        .accessibilityIdentifier(identifier)
+    }
+}
+
 struct ConsoleComposer: View {
     @EnvironmentObject private var model: AppModel
 
-    @State private var agent = "claude_code"
+    @State private var selection = ComposerSelection()
     @State private var prompt = ""
+    @State private var attachments: [AttachmentItem] = []
+    @State private var showAttach = false
     @FocusState private var focused: Bool
 
     private let agents: [AgentOption] = [
@@ -149,9 +208,31 @@ struct ConsoleComposer: View {
         AgentOption(id: "deepseek", name: "DeepSeek"),
     ]
 
+    /// The room the floating keyboard bar needs. Older systems draw the bar
+    /// inside the keyboard area, so they need none.
+    static var keyboardBarClearance: CGFloat {
+        if #available(iOS 26, *) { return 56 }
+        return 0
+    }
+
     private var trimmed: String { prompt.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var sending: Bool { model.dispatchState?.isLoading ?? false }
     private var canSend: Bool { model.canDispatch && !trimmed.isEmpty && !sending }
+    private var modelOptions: [ChoiceOption] { model.catalogue.modelOptions(for: selection.agent) }
+    private var effortOptions: [ChoiceOption] { model.catalogue.effortOptions(for: selection.agent) }
+
+    private func modelChip(_ prefix: String) -> some View {
+        OptionMenu(title: ComposerSelection.chipText(modelOptions, selected: selection.modelId),
+                   symbol: "cpu", options: modelOptions, selectedId: selection.modelId,
+                   identifier: prefix + "-model") { selection.modelId = $0 }
+    }
+
+    private func effortChip(_ prefix: String) -> some View {
+        OptionMenu(title: ComposerSelection.chipText(effortOptions, selected: selection.effortId),
+                   symbol: "gauge.with.dots.needle.33percent", options: effortOptions,
+                   selectedId: selection.effortId,
+                   identifier: prefix + "-effort") { selection.effortId = $0 }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -162,30 +243,61 @@ struct ConsoleComposer: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("composer-notice")
             }
-            HStack {
-                Text("Send to")
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.textSecondary)
-                Picker("Agent", selection: $agent) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
                     ForEach(agents) { item in
-                        Text(item.name).tag(item.id)
+                        let chosen = selection.agent == item.id
+                        Button {
+                            selection.select(agent: item.id, catalogue: model.catalogue)
+                        } label: {
+                            Text(item.name)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(chosen ? Color.white : Theme.textMain)
+                                .padding(.horizontal, 14)
+                                .frame(minHeight: 36)
+                                .background(Capsule().fill(chosen ? Theme.action : Theme.raised))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(chosen ? .isSelected : [])
+                        .accessibilityIdentifier("composer-agent-" + item.id)
                     }
                 }
-                .pickerStyle(.menu)
-                .frame(minHeight: Theme.minTap)
-                .accessibilityIdentifier("composer-agent")
-                Spacer()
             }
-            HStack(alignment: .center, spacing: 8) {
+            HStack(spacing: 8) {
+                modelChip("composer")
+                effortChip("composer")
+                Button {
+                    showAttach = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "paperclip")
+                        if !attachments.isEmpty { Text("\(attachments.count)").font(.subheadline.weight(.semibold)) }
+                    }
+                    .foregroundStyle(Theme.textMain)
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 36)
+                    .background(Capsule().fill(Theme.raised))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Attach")
+                .accessibilityIdentifier("composer-attach")
+                Spacer(minLength: 0)
+            }
+            if !attachments.isEmpty {
+                AttachmentChips(items: $attachments, identifierPrefix: "composer")
+            }
+            HStack(alignment: .bottom, spacing: 8) {
                 TextField("Prompt", text: $prompt, axis: .vertical)
                     .lineLimit(1...4)
                     .textFieldStyle(.roundedBorder)
                     .frame(minHeight: Theme.minTap)
                     .focused($focused)
-                    .submitLabel(.send)
-                    .onSubmit { send() }
                     .toolbar {
+                        // Model and Effort on the left, Done on the right. The
+                        // bar sits above the keyboard, so nothing covers Send.
                         ToolbarItemGroup(placement: .keyboard) {
+                            modelChip("toolbar")
+                            effortChip("toolbar")
                             Spacer()
                             Button("Done") {
                                 focused = false
@@ -204,7 +316,7 @@ struct ConsoleComposer: View {
             }
             switch model.dispatchState {
             case .loaded(let response):
-                Text(Self.replyText(response, fallbackAgent: agent))
+                Text(Self.replyText(response, fallbackAgent: selection.agent))
                     .font(.footnote)
                     .foregroundStyle(Theme.success)
                     .fixedSize(horizontal: false, vertical: true)
@@ -221,6 +333,15 @@ struct ConsoleComposer: View {
         }
         .disabled(!model.canDispatch)
         .card()
+        // On iOS 26 the keyboard bar floats above the keyboard instead of
+        // being part of it, so it would sit over Send. Lift the composer by
+        // the height of the bar while the field has focus.
+        .padding(.bottom, focused ? ConsoleComposer.keyboardBarClearance : 0)
+        .animation(.easeOut(duration: 0.2), value: focused)
+        .sheet(isPresented: $showAttach) {
+            AttachSheet(attachments: $attachments)
+                .environmentObject(model)
+        }
     }
 
     /// The reply shown under the composer: status, agent, session id and the
@@ -237,10 +358,15 @@ struct ConsoleComposer: View {
     private func send() {
         let text = trimmed
         guard canSend else { return }
-        let target = agent
+        let target = selection.agent
+        let chosenModel = selection.modelValue
+        let chosenEffort = selection.effortValue
+        let paths = Attachments.hubPaths(attachments)
         Task {
-            if await model.send(agent: target, prompt: text) {
+            if await model.send(agent: target, prompt: text, model: chosenModel, effort: chosenEffort,
+                                files: paths.isEmpty ? nil : paths) {
                 prompt = ""
+                attachments = []
             }
         }
     }

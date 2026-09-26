@@ -58,7 +58,7 @@ final class IrohRealHubTests: XCTestCase {
 
     func testRealHubAPIAndDispatchOverIroh() async throws {
         let session = try await connect()
-        defer { Task { await session.close() } }
+        addTeardownBlock { await session.close() }
 
         // Hello arrived: the hub lists the api capability.
         let consoleSession = try XCTUnwrap(session as? ConsoleStreamSession)
@@ -104,6 +104,91 @@ final class IrohRealHubTests: XCTestCase {
         }
         XCTAssertNotNil(entry.id)
         report("E2E-PASS dispatch output seen on the console stream")
+    }
+
+    /// Phase A over iroh: model, effort and files reach the agent, Sessions
+    /// refresh reads the live sessions and the log, and the calls the hub
+    /// keeps to the LAN are refused.
+    func testRealHubModelEffortSessionsAndLANOnlyRoutes() async throws {
+        let session = try await connect()
+        addTeardownBlock { await session.close() }
+        let api = try XCTUnwrap(session.api)
+        let client = HubClient(api: api)
+
+        // Model and effort go through the dispatch call, and the stub
+        // agent prints the arguments it was given.
+        let marker = "e2e-effort-\(UUID().uuidString.prefix(8))"
+        report("E2E-STEP connected, dispatching")
+        report("E2E-STEP task cancelled before the call: \(Task.isCancelled)")
+        let response: DispatchResponse
+        do {
+            response = try await client.dispatch(DispatchRequest(targetAgent: "codex", prompt: marker,
+                                                                 model: "gpt-5", effort: "low"))
+        } catch {
+            report("E2E-STEP the dispatch threw \(type(of: error)) \(error), task cancelled: \(Task.isCancelled)")
+            throw error
+        }
+        XCTAssertEqual(response.status, "dispatched")
+        report("E2E-STEP dispatched, reading the log")
+
+        // The stub prints its arguments as the agent's reply. Read the log
+        // through the API until the reply is there.
+        func carriesTheChoices(_ content: String) -> Bool {
+            content.contains("stub args") && content.contains("reasoning_effort=low")
+                && content.contains("-m gpt-5")
+        }
+        var seen = false
+        var lastRows: [ConsoleFrame.LogEntry] = []
+        let deadline = Date().addingTimeInterval(60)
+        while !seen, Date() < deadline {
+            lastRows = try await client.logs(limit: 60)
+            seen = lastRows.contains { carriesTheChoices($0.content ?? "") }
+            if !seen { try await Task.sleep(nanoseconds: 2_000_000_000) }
+        }
+        if !seen {
+            for row in lastRows.suffix(12) {
+                report("E2E-DEBUG \(row.agent ?? "-") \(row.source ?? "-") \(String((row.content ?? "").prefix(200)))")
+            }
+        }
+        XCTAssertTrue(seen, "the agent never printed the model, effort and files it was given")
+        report("E2E-PASS model and effort reached the agent over iroh")
+
+        // Sessions refresh: the live sessions and the newest log rows.
+        let live = try await client.liveSessions()
+        let rows = try await client.logs(limit: 50)
+        XCTAssertFalse(rows.isEmpty, "the log holds the dispatch just made")
+        report("E2E-PASS sessions refresh read \(live.count) live sessions and \(rows.count) log rows")
+
+        // Hub 0.1.12 keeps these to the LAN, so iroh refuses them and the app
+        // switches the matching controls off. A newer hub can open some of
+        // them, so the pipeline calls are noted and not required to fail.
+        let refused: [(String, String, Data?)] = [
+            ("GET", HubPath.capabilities, nil),
+            ("GET", HubPath.files, nil),
+            ("POST", HubPath.usageRefreshAll, Data("{}".utf8)),
+        ]
+        for (method, path, body) in refused {
+            do {
+                _ = try await api.send(method: method, path: path, body: body)
+                XCTFail("\(method) \(path) must be refused over iroh")
+            } catch {
+                XCTAssertEqual(error as? TransportError, .notSupported, "\(method) \(path)")
+            }
+        }
+        let openable: [(String, String, Data?)] = [
+            ("POST", HubPath.jobs, Data(#"{"title":"x","tasks":[]}"#.utf8)),
+            ("DELETE", HubPath.job("no-such-job"), nil),
+        ]
+        for (method, path, body) in openable {
+            do {
+                let answer = try await api.send(method: method, path: path, body: body)
+                report("E2E-NOTE \(method) \(path) is open over iroh on this hub (status \(answer.status))")
+            } catch {
+                XCTAssertEqual(error as? TransportError, .notSupported, "\(method) \(path)")
+            }
+        }
+        XCTAssertTrue(Set<Capability>.irohAPI.isDisjoint(with: Capability.lanOnly))
+        report("E2E-PASS LAN only calls refused over iroh")
     }
 
     func testRealHubRejectsAWrongKey() async throws {

@@ -10,9 +10,13 @@ name="$1"
 home="$RUNNER_TEMP/home-$name"
 mkdir -p "$home" "$RUNNER_TEMP/stubs"
 
-# Stub for the codex CLI: prints two lines and exits.
-printf '#!/bin/sh\necho "stub agent line one"\necho "stub agent line two"\nexit 0\n' > "$RUNNER_TEMP/stubs/codex"
+# Stub for the codex CLI: prints a line and a JSON event with its arguments.
+cp "$(dirname "$0")/../ci/stub_codex.sh" "$RUNNER_TEMP/stubs/codex"
 chmod +x "$RUNNER_TEMP/stubs/codex"
+
+# Agent adapters that place the model and effort in the codex command.
+mkdir -p "$home/.agnview"
+cp "$(dirname "$0")/../ci/e2e_agents.yaml" "$home/.agnview/agents.yaml"
 
 port="$(python -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
 

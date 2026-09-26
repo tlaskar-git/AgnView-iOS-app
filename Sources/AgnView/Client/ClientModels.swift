@@ -9,7 +9,7 @@ protocol TolerantEnum: Codable, Equatable {
 }
 
 enum Provider: TolerantEnum {
-    case claude, chatgpt, gemini
+    case claude, chatgpt, gemini, antigravity
     case unknown(String)
 
     init(raw: String) {
@@ -17,6 +17,7 @@ enum Provider: TolerantEnum {
         case "claude": self = .claude
         case "chatgpt": self = .chatgpt
         case "gemini": self = .gemini
+        case "antigravity": self = .antigravity
         default: self = .unknown(raw)
         }
     }
@@ -26,6 +27,7 @@ enum Provider: TolerantEnum {
         case .claude: return "claude"
         case .chatgpt: return "chatgpt"
         case .gemini: return "gemini"
+        case .antigravity: return "antigravity"
         case .unknown(let value): return value
         }
     }
@@ -334,12 +336,22 @@ struct DispatchRequest: Codable, Equatable {
     var prompt: String
     var workingDir: String?
     var sessionId: String?
+    /// The hub's model id, or nil for the agent's own default.
+    var model: String?
+    /// low, medium, high and the like, or nil for the agent's own default.
+    var effort: String?
+    /// Paths on the hub computer. The hub adds a "[Context Files: ...]" line to the prompt.
+    var files: [String]?
 
-    init(targetAgent: String, prompt: String, workingDir: String? = nil, sessionId: String? = nil) {
+    init(targetAgent: String, prompt: String, workingDir: String? = nil, sessionId: String? = nil,
+         model: String? = nil, effort: String? = nil, files: [String]? = nil) {
         self.targetAgent = targetAgent
         self.prompt = prompt
         self.workingDir = workingDir
         self.sessionId = sessionId
+        self.model = model
+        self.effort = effort
+        self.files = files
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -349,15 +361,20 @@ struct DispatchRequest: Codable, Equatable {
         case prompt
         case workingDir = "working_directory"
         case sessionId = "session_id"
+        case model, effort, files
     }
 
-    /// Encodes nil optionals as JSON null, which the hub accepts for both.
+    /// Encodes nil working_directory and session_id as JSON null, which the
+    /// hub accepts. Model, effort and files are left out unless set.
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(targetAgent, forKey: .targetAgent)
         try c.encode(prompt, forKey: .prompt)
         try c.encode(workingDir, forKey: .workingDir)
         try c.encode(sessionId, forKey: .sessionId)
+        try c.encodeIfPresent(model, forKey: .model)
+        try c.encodeIfPresent(effort, forKey: .effort)
+        if let files, !files.isEmpty { try c.encode(files, forKey: .files) }
     }
 }
 
@@ -390,6 +407,17 @@ struct DispatchResponse: Codable, Equatable {
 }
 
 enum HubJSON {
+    /// Decodes without the snake case key strategy, for answers whose
+    /// dictionary keys are ids that must stay as sent (claude_code).
+    static func decodePlain<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+        do {
+            return try JSONDecoder().decode(type, from: data)
+        } catch {
+            HubLog.decodeFailure(type, error)
+            throw TransportError.protocolViolation
+        }
+    }
+
     static func decoder() -> JSONDecoder {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
