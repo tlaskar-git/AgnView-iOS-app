@@ -140,7 +140,8 @@ final class DemoHub: APITransport, @unchecked Sendable {
         case ("GET", HubPath.capabilities):
             return Self.ok(capabilitiesBody())
         case ("GET", HubPath.files):
-            return Self.ok(["files": DemoData.files, "cwd": DemoData.workingDirectory])
+            let listing: [String: Any] = ["files": DemoData.files, "cwd": DemoData.workingDirectory]
+            return Self.ok(listing)
         case ("GET", HubPath.jobs):
             return Self.ok(jobsBody())
         case ("POST", HubPath.dispatch):
@@ -309,8 +310,10 @@ final class DemoHub: APITransport, @unchecked Sendable {
         ]
         return list.map { agent, session, idle in
             let isBusy = busy.contains(agent)
-            return ["agent": agent, "session_id": session, "working_directory": DemoData.workingDirectory,
-                    "busy": isBusy, "alive": true, "idle_seconds": isBusy ? 0.0 : idle]
+            let item: [String: Any] = ["agent": agent, "session_id": session,
+                                       "working_directory": DemoData.workingDirectory,
+                                       "busy": isBusy, "alive": true, "idle_seconds": isBusy ? 0.0 : idle]
+            return item
         }
     }
 

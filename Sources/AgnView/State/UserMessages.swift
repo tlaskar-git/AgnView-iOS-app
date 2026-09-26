@@ -22,7 +22,7 @@ enum UserMessages {
     static let demoBanner = "Demo mode. Sample data only. Nothing is connected."
     static let demoStatus = "Demo mode. Sample data only."
     static let demoRouteLabel = "Demo"
-    static let offlineHub ="Can't reach this hub. Check that AgnView is running on your computer."
+    static let offlineHub = "Can't reach this hub. Check that AgnView is running on your computer."
 
     static func lanBanner(_ reason: LANUnavailableReason) -> String {
         switch reason {
