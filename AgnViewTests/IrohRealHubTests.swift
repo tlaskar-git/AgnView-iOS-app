@@ -175,11 +175,11 @@ final class IrohRealHubTests: XCTestCase {
                 XCTAssertEqual(error as? TransportError, .notSupported, "\(method) \(path)")
             }
         }
-        let optional: [(String, String, Data?)] = [
+        let openable: [(String, String, Data?)] = [
             ("POST", HubPath.jobs, Data(#"{"title":"x","tasks":[]}"#.utf8)),
             ("DELETE", HubPath.job("no-such-job"), nil),
         ]
-        for (method, path, body) in optional {
+        for (method, path, body) in openable {
             do {
                 let answer = try await api.send(method: method, path: path, body: body)
                 report("E2E-NOTE \(method) \(path) is open over iroh on this hub (status \(answer.status))")
