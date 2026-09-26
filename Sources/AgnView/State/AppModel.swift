@@ -525,6 +525,7 @@ final class AppModel: ObservableObject {
     /// Reads the lists again when the chosen agent has none yet, so a list
     /// that arrives late still reaches the menu.
     func refreshCatalogueIfMissing(for agent: String) async {
+        guard canAttachFromComputer else { return }
         guard catalogueOrigin != .hub || !catalogue.hasNamedModels(for: agent) else { return }
         await refreshCatalogue()
     }
@@ -963,6 +964,7 @@ extension AppModel {
             "claude_code": [option("default", "Default"), option("low", "Low Effort"), option("high", "High Effort")],
         ]
         stored.plainEfforts = HubCatalogue.documentedEfforts
+        if let hubId = activeHub?.id { catalogueCache.save(stored, for: hubId) }
         catalogue = stored
         catalogueOrigin = .stored
         jobs = []

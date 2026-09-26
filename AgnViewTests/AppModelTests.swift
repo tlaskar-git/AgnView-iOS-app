@@ -642,8 +642,10 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.usageSnapshot?.takenAt, nowBox.date.addingTimeInterval(-300))
     }
 
-    func testForcedIrohJobs() {
+    func testForcedIrohJobs() async {
         let model = forced("irohJobs")
+        await model.refreshCatalogueIfMissing(for: "codex")
+        await model.refreshCatalogue()
         XCTAssertEqual(model.connection, .online(.relay, .irohJobs))
         XCTAssertTrue(model.canManageJobs)
         XCTAssertNil(model.pipelineCreateNotice)
