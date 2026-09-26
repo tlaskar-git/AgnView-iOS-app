@@ -20,7 +20,7 @@ enum UserMessages {
     static let noNamedModels = "The hub lists no models for this agent. Default lets the hub pick."
     /// The banner every screen shows while the demo runs.
     static let demoBanner = "Demo mode. Sample data only. Nothing is connected."
-    static let demoStatus = "Demo mode. Sample data only."
+    static let demoStatus = "Demo computer is healthy"
     static let demoRouteLabel = "Demo"
     static let offlineHub = "Can't reach this hub. Check that AgnView is running on your computer."
 

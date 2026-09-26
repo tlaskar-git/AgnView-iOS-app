@@ -35,10 +35,10 @@ final class AppStoreScreenshotTests: DemoUITestCase {
         need("console-row", timeout: 30)
         XCTAssertTrue(consoleHas("Add input validation"))
         sendPrompt("Add a short section about the demo project to the readme.")
+        closeKeyboard()
         XCTAssertTrue(consoleHas("Demo reply"), "the canned reply never arrived")
         // Let a few live lines arrive so the log looks busy.
         Thread.sleep(forTimeInterval: 9)
-        closeKeyboard()
         snap("01-console")
 
         // 02: the keyboard with the composer menus.

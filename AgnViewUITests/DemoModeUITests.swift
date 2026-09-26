@@ -63,6 +63,8 @@ final class DemoModeUITests: DemoUITestCase {
         XCTAssertTrue(low.exists, "the demo effort list never reached the menu")
         low.tap()
         sendPrompt("Hello from the demo")
+        // The keyboard hides most of the log on a phone. Close it so the new rows are on screen.
+        closeKeyboard()
         XCTAssertTrue(consoleHas("Demo reply"), "the canned reply never reached the console")
         XCTAssertTrue(element("composer-result").label.contains("Demo mode"))
     }

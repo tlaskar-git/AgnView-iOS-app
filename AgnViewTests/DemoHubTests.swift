@@ -151,10 +151,11 @@ final class DemoHubTests: XCTestCase {
     func testSamplePipelinesHaveTasksAndDependencies() async throws {
         let client = HubClient(api: makeHub())
         let jobs = try await client.jobs()
-        XCTAssertEqual(jobs.count, 2)
+        XCTAssertEqual(jobs.count, 3)
         XCTAssertTrue(jobs.allSatisfy { !$0.tasks.isEmpty })
         XCTAssertTrue(jobs.contains { $0.tasks.contains { !$0.dependencies.isEmpty } })
         XCTAssertEqual(jobs.first { $0.id == "job-demo-signup" }?.status, .inProgress)
+        XCTAssertEqual(jobs.first { $0.id == "job-demo-docs" }?.status, .completed)
     }
 
     func testCreateAndDeletePipelineWorkInMemory() async throws {
@@ -174,12 +175,12 @@ final class DemoHubTests: XCTestCase {
         XCTAssertEqual(created.tasks.first { $0.id == "read" }?.status, .ready)
         XCTAssertEqual(created.tasks.first { $0.id == "write" }?.status, .pending)
         let listed = try await client.jobs()
-        XCTAssertEqual(listed.count, 3)
+        XCTAssertEqual(listed.count, 4)
         XCTAssertTrue(listed.contains { $0.id == created.id })
 
         try await client.deleteJob(id: created.id)
         let after = try await client.jobs()
-        XCTAssertEqual(after.count, 2)
+        XCTAssertEqual(after.count, 3)
         XCTAssertFalse(after.contains { $0.id == created.id })
     }
 

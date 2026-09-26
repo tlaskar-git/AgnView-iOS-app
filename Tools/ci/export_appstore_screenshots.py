@@ -9,8 +9,18 @@ when the count differs from the expected one.
 """
 import json
 import os
+import re
 import shutil
 import sys
+
+# xcresulttool writes "<name>_<index>_<UUID>" and puts the suffix before the
+# last dot of the name, so iphone-6.9-01-console becomes
+# iphone-6_0_<UUID>.9-01-console. This puts the name back together.
+SUFFIX = re.compile(r"_\d+_[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
+
+
+def clean_name(human):
+    return SUFFIX.sub("", human, count=1)
 
 
 def main():
@@ -21,10 +31,9 @@ def main():
         manifest = json.load(fh)
     for test in manifest:
         for att in test.get("attachments", []):
-            human = att.get("suggestedHumanReadableName", "")
-            if not human.startswith(prefix + "-"):
+            base = clean_name(att.get("suggestedHumanReadableName", ""))
+            if not base.startswith(prefix + "-"):
                 continue
-            base = human.split("_")[0]
             ext = os.path.splitext(att["exportedFileName"])[1] or ".png"
             shutil.copyfile(os.path.join(src, att["exportedFileName"]), os.path.join(out, base + ext))
             copied.append(base + ext)

@@ -473,6 +473,18 @@ final class DemoHub: APITransport, @unchecked Sendable {
                                  agent: "claude_code", status: "pending", dependencies: ["collect-figures"],
                                  summary: nil),
                     ]),
+            DemoJob(id: "job-demo-docs", title: "Refresh the sample docs",
+                    description: "A finished pipeline, for reference.", createdAt: created,
+                    tasks: [
+                        DemoTask(id: "draft-docs", title: "Draft the new sections",
+                                 description: "Write the usage and pairing sections.",
+                                 agent: "antigravity", status: "completed", dependencies: [],
+                                 summary: "Drafted both sections."),
+                        DemoTask(id: "check-links", title: "Check the links",
+                                 description: "Open every link in the docs.",
+                                 agent: "codex", status: "completed", dependencies: ["draft-docs"],
+                                 summary: "All links work."),
+                    ]),
         ]
     }
 
