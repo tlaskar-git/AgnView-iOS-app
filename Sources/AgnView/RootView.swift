@@ -63,19 +63,13 @@ struct RootView: View {
     /// bottom inset the size of the bar, so nothing hides behind it.
     private var phoneLayout: some View {
         let safeBottom = SafeArea.bottom
-        let inset = TabBarMetrics.contentInset(safeBottom: safeBottom)
         return TabView(selection: $nav.screen) {
             ForEach(Screen.phoneOrder) { screen in
                 NavigationStack {
                     ScreenRouter(screen: screen)
                 }
                 .toolbar(.hidden, for: .tabBar)
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    Color.clear
-                        .frame(height: nav.keyboardVisible ? 0 : inset)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
+                .tabItem { Label(screen.title, systemImage: screen.symbol) }
                 .tag(screen)
             }
         }

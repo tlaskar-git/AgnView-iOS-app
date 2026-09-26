@@ -21,9 +21,9 @@ struct ConsoleView: View {
                 .padding(.horizontal, Theme.screenPadding)
                 .padding(.bottom, 4)
                 ConsoleLog(agent: selection.agent)
-                    .safeAreaInset(edge: .bottom, spacing: 0) {
-                        ConsoleComposer(selection: $selection)
-                    }
+                // The composer is a sibling under the chat, not an inset over
+                // it, so a tap in the field can never reach the chat's tap.
+                ConsoleComposer(selection: $selection)
             }
         }
     }

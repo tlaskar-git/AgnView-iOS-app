@@ -50,13 +50,20 @@ struct RoutePill: View {
                 .foregroundStyle(.primary)
                 .lineLimit(1)
         }
+        .accessibilityHidden(true)
         .padding(.horizontal, HeaderMetrics.pillHorizontalPadding)
         .frame(minWidth: HeaderMetrics.pillMinWidth, minHeight: height)
         .glassSurface(Capsule())
         .fixedSize()
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Connection: \(label)")
-        .accessibilityIdentifier("route-pill")
+        // The element covers the whole capsule, so its frame is the pill and
+        // not just the words inside it.
+        .overlay {
+            Color.clear
+                .contentShape(Capsule())
+                .accessibilityElement()
+                .accessibilityLabel("Connection: \(label)")
+                .accessibilityIdentifier("route-pill")
+        }
     }
 }
 

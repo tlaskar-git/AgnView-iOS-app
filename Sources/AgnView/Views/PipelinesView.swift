@@ -390,6 +390,7 @@ struct JobDetailView: View {
                 }
             }
         }
+        .tabBarClearance()
         .accessibilityIdentifier("job-detail")
     }
 }

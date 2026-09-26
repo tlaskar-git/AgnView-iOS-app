@@ -177,6 +177,32 @@ private struct TabAccessibility: ViewModifier {
     }
 }
 
+/// Leaves room at the bottom for the floating tab bar, so the last row of a
+/// list and the composer stay above it. It leaves no room while the keyboard
+/// is up (the bar hides then) and none on iPad (which has a sidebar).
+struct TabBarClearance: ViewModifier {
+    @EnvironmentObject private var nav: NavState
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if HeaderMetrics.isPad {
+            content
+        } else {
+            content.safeAreaInset(edge: .bottom, spacing: 0) {
+                Color.clear
+                    .frame(height: nav.keyboardVisible
+                           ? 0 : TabBarMetrics.contentInset(safeBottom: SafeArea.bottom))
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+}
+
+extension View {
+    func tabBarClearance() -> some View { modifier(TabBarClearance()) }
+}
+
 /// The bottom edge of the key window's safe area: the home indicator room.
 enum SafeArea {
     static var bottom: CGFloat {

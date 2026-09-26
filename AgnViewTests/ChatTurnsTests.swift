@@ -26,7 +26,9 @@ final class ChatTurnsTests: XCTestCase {
     }
 
     private func replies(_ items: [ChatItem]) -> [ChatReply] {
-        items.compactMap { if case .agent(let reply) = $0 { return reply } else { return nil } }
+        items.compactMap { item -> ChatReply? in
+            if case .agent(let reply) = item { return reply } else { return nil }
+        }
     }
 
     // MARK: Grouping

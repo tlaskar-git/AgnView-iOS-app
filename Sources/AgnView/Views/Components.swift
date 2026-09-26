@@ -328,6 +328,7 @@ struct ScreenChrome<Content: View, Actions: View>: View {
             actions
             chromeBody
         }
+        .tabBarClearance()
         .background(canvas.ignoresSafeArea())
         .navigationTitle(screen.title)
         .navigationBarTitleDisplayMode(.inline)

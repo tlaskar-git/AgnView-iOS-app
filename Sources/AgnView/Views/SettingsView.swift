@@ -205,6 +205,7 @@ struct ConnectionDetailView: View {
         }
         .navigationTitle("Connection")
         .navigationBarTitleDisplayMode(.inline)
+        .tabBarClearance()
         .accessibilityIdentifier("connection-detail")
     }
 }

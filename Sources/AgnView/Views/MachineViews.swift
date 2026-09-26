@@ -28,7 +28,7 @@ struct MachineRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(hub.name)
                         .font(.body.weight(.medium))
-                        .foregroundStyle(.primary)
+                        .foregroundColor(Color(uiColor: .label))
                         .lineLimit(2)
                     Text(subtitle)
                         .font(.subheadline)
@@ -163,6 +163,7 @@ struct MachineDetailView: View {
         } message: {
             Text(UserMessages.removedFromPhone)
         }
+        .tabBarClearance()
         .accessibilityIdentifier("machine-detail")
     }
 
