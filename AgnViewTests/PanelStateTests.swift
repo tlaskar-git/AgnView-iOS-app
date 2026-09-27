@@ -42,11 +42,16 @@ final class PanelStateTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(measured.first).hasTokens)
     }
 
-    func testReplyTextShowsStatusAgentSessionAndMessage() {
+    func testReplyTextIsOneShortLineWithoutStatusOrSession() {
         let response = DispatchResponse(status: "dispatched", agent: "codex", sessionId: "abcdef123456", message: "Accepted.")
-        XCTAssertEqual(ConsoleComposer.replyText(response, fallbackAgent: "claude_code"),
-                       "Status: dispatched\nAgent: Codex\nSession: abcdef12\nAccepted.")
+        XCTAssertEqual(ConsoleComposer.replyText(response, fallbackAgent: "claude_code"), "Sent to Codex")
         XCTAssertEqual(ConsoleComposer.replyText(DispatchResponse(), fallbackAgent: "claude_code"),
-                       "Agent: Claude Code")
+                       "Sent to Claude Code")
+        let demo = DispatchResponse(status: "dispatched", agent: "claude_code", sessionId: "3f9a1c72",
+                                    message: "Demo mode. Sent to the sample console only.")
+        XCTAssertEqual(ConsoleComposer.replyText(demo, fallbackAgent: "claude_code", isDemo: true),
+                       "Demo mode. Sent to the sample console only.")
+        XCTAssertEqual(ConsoleComposer.replyText(demo, fallbackAgent: "claude_code", isDemo: false),
+                       "Sent to Claude Code")
     }
 }

@@ -32,6 +32,10 @@ struct NewPipelineView: View {
             .background(Theme.page.ignoresSafeArea())
             .navigationTitle("New pipeline")
             .navigationBarTitleDisplayMode(.inline)
+            // The form scrolls under the bar. A see-through bar showed the
+            // first field as ghost text behind the title, so the bar is solid.
+            .toolbarBackground(Theme.page, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {

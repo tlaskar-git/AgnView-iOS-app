@@ -30,13 +30,15 @@ struct SessionsView: View {
                     } else {
                         ForEach(model.sessions) { session in
                             Button {
-                                model.setAgentFilter(session.agent)
+                                // The console is one shared feed for every
+                                // agent (Claude-style), so opening a session
+                                // never filters it down to just this agent.
                                 nav.screen = .console
                             } label: {
                                 SessionRow(session: session, firstLine: firstLine(for: session))
                             }
                             .buttonStyle(.plain)
-                            .accessibilityHint("Opens the console for this agent")
+                            .accessibilityHint("Opens the console")
                             .accessibilityIdentifier("session-row")
                         }
                     }

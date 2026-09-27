@@ -68,6 +68,9 @@ struct ConsoleComposer: View {
     @State private var prompt = ""
     @State private var attachments: [AttachmentItem] = []
     @State private var showAttach = false
+    /// The one calm line shown after a send. It fades after a few seconds.
+    @State private var confirmation: String?
+    @State private var confirmationToken = 0
     @FocusState private var focused: Bool
     @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -213,23 +216,22 @@ struct ConsoleComposer: View {
                     .padding(.bottom, 2)
             }
             inputRow
-            switch model.dispatchState {
-            case .loaded(let response):
-                Text(Self.replyText(response, fallbackAgent: selection.agent))
+            if let confirmation {
+                Text(confirmation)
                     .font(.footnote)
                     .foregroundStyle(Theme.success)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 4)
+                    .transition(.opacity)
                     .accessibilityIdentifier("composer-result")
-            case .failed(let message):
+            }
+            if case .failed(let message) = model.dispatchState {
                 Text(message)
                     .font(.footnote)
                     .foregroundStyle(Theme.error)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 4)
                     .accessibilityIdentifier("composer-error")
-            default:
-                EmptyView()
             }
         }
         .disabled(!model.canDispatch)
@@ -243,17 +245,37 @@ struct ConsoleComposer: View {
             AttachSheet(attachments: $attachments)
                 .environmentObject(model)
         }
+        .onChange(of: model.dispatchState) { _, state in
+            switch state {
+            case .loaded(let response):
+                confirmationToken += 1
+                let token = confirmationToken
+                withAnimation(.easeOut(duration: 0.2)) {
+                    confirmation = Self.replyText(response, fallbackAgent: selection.agent, isDemo: model.isDemo)
+                }
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: Self.confirmationSeconds * 1_000_000_000)
+                    guard token == confirmationToken else { return }
+                    withAnimation(.easeOut(duration: 0.6)) { confirmation = nil }
+                }
+            case .loading, .failed:
+                confirmationToken += 1
+                confirmation = nil
+            default:
+                break
+            }
+        }
     }
 
-    /// The reply shown under the composer: status, agent, session id and the
-    /// hub message, whichever the hub sent.
-    static func replyText(_ response: DispatchResponse, fallbackAgent: String) -> String {
-        var parts: [String] = []
-        if let status = response.status, !status.isEmpty { parts.append("Status: \(status)") }
-        parts.append("Agent: \(Format.agentName(response.agent ?? fallbackAgent))")
-        if let session = response.sessionId, !session.isEmpty { parts.append("Session: \(Format.shortId(session))") }
-        if let message = response.message, !message.isEmpty { parts.append(message) }
-        return parts.joined(separator: "\n")
+    /// How long the confirmation stays before it fades.
+    static let confirmationSeconds: UInt64 = 4
+
+    /// The one line shown under the composer after a send. In demo mode it is
+    /// the demo wording. Otherwise it names the agent and nothing else: no
+    /// status word, no session id.
+    static func replyText(_ response: DispatchResponse, fallbackAgent: String, isDemo: Bool = false) -> String {
+        if isDemo, let message = response.message, !message.isEmpty { return message }
+        return "Sent to " + Format.agentName(response.agent ?? fallbackAgent)
     }
 
     private func send() {

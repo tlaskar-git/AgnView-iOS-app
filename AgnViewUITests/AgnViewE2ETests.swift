@@ -175,7 +175,7 @@ final class AgnViewE2ETests: XCTestCase {
         send.tap()
         need("composer-result", timeout: 40)
         let reply = element("composer-result").label
-        XCTAssertTrue(reply.contains("Agent:"), "reply lacks the agent: \(reply)")
+        XCTAssertTrue(reply.hasPrefix("Sent to "), "reply lacks the agent: \(reply)")
         XCTAssertFalse(reply.contains("does not understand"), "reply shows a decode error: \(reply)")
     }
 
@@ -200,7 +200,7 @@ final class AgnViewE2ETests: XCTestCase {
         XCTAssertTrue(send.isEnabled)
         send.tap()
         need("composer-result", timeout: 40)
-        XCTAssertTrue(element("composer-result").label.contains("Agent:"))
+        XCTAssertTrue(element("composer-result").label.hasPrefix("Sent to "))
         let fieldValue = (element("composer-prompt").value as? String) ?? ""
         XCTAssertTrue(fieldValue.isEmpty || fieldValue.hasPrefix("Message "),
                       "the field was not cleared after a successful send")
@@ -273,7 +273,7 @@ final class AgnViewE2ETests: XCTestCase {
         XCTAssertTrue(send.isEnabled, "Send stayed disabled with text in the field")
         send.tap()
         need("composer-result", timeout: 40)
-        XCTAssertTrue(element("composer-result").label.contains("Agent: Codex"))
+        XCTAssertTrue(element("composer-result").label.contains("Sent to Codex"))
         // Close the keyboard so the console log has room to show its rows.
         closeKeyboardByTappingChat()
         let row = app.descendants(matching: .any)

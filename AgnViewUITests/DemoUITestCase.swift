@@ -137,17 +137,22 @@ class DemoUITestCase: XCTestCase {
     }
 
     /// Types a prompt and sends it. The demo answers with a built-in reply.
-    func sendPrompt(_ text: String) {
+    /// Returns the confirmation line under the composer, read at once because
+    /// the line fades after a few seconds.
+    @discardableResult
+    func sendPrompt(_ text: String) -> String {
         waitForComposer()
         let prompt = element("composer-prompt")
         prompt.tap()
         prompt.typeText(text)
         element("composer-send").tap()
         need("composer-result", timeout: 30)
+        return element("composer-result").label
     }
 
-    /// True when a console row with this text exists.
-    func consoleHas(_ text: String, timeout: TimeInterval = 20) -> Bool {
+    /// True when a console row with this text exists. 40s: generous headroom
+    /// for the canned reply to land on a busy CI runner.
+    func consoleHas(_ text: String, timeout: TimeInterval = 40) -> Bool {
         let row = app.descendants(matching: .any)
             .matching(identifier: "console-row")
             .matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch

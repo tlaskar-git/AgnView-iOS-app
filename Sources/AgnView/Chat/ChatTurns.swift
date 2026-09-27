@@ -150,6 +150,11 @@ struct ChatBuilder {
     /// The index in `items` of the reply that can still grow.
     private var openReply: Int?
     private var now = Date()
+    /// Demo mode shows a fixed clock, so the labels never carry the time of
+    /// the machine that runs the app. The first line reads 09:41 today and the
+    /// others keep their distance from it.
+    private var demoClock = false
+    private var firstTime: Date?
     private let clockFormatter: DateFormatter
     private let dateFormatter: DateFormatter
 
@@ -169,8 +174,12 @@ struct ChatBuilder {
 
     /// Brings the conversation up to date. Returns true when it changed.
     @discardableResult
-    mutating func sync(_ lines: [ConsoleLine], now: Date = Date()) -> Bool {
+    mutating func sync(_ lines: [ConsoleLine], now: Date = Date(), demoClock: Bool = false) -> Bool {
         self.now = now
+        if demoClock != self.demoClock {
+            self.demoClock = demoClock
+            reset()
+        }
         if lines.isEmpty {
             guard processed > 0 || !items.isEmpty else { return false }
             reset()
@@ -198,6 +207,16 @@ struct ChatBuilder {
         lastTurnTime = nil
         lastSeparatorDay = nil
         openReply = nil
+        firstTime = nil
+    }
+
+    /// The time a label shows. Real time, except in demo mode.
+    private mutating func labelTime(_ time: Date) -> Date {
+        guard demoClock else { return time }
+        let first = firstTime ?? time
+        firstTime = first
+        let base = calendar.date(bySettingHour: 9, minute: 41, second: 0, of: now) ?? now
+        return base.addingTimeInterval(time.timeIntervalSince(first))
     }
 
     private enum Kind { case system, user, agent }
@@ -253,7 +272,7 @@ struct ChatBuilder {
            calendar.isDate(time, inSameDayAs: last) {
             return
         }
-        items.append(.separator(id: "t" + id, text: separatorText(for: time)))
+        items.append(.separator(id: "t" + id, text: separatorText(for: labelTime(time))))
     }
 
     /// The first label of a day names the day, the next ones show the time.

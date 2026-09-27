@@ -9,23 +9,31 @@ struct ConsoleView: View {
     var body: some View {
         ScreenChrome(screen: .console) {
             VStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 8) {
-                    ScreenBanners(inList: false)
-                    Text(model.statusLine)
-                        .font(.footnote)
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityIdentifier("status-line")
-                }
-                .padding(.horizontal, Theme.screenPadding)
-                .padding(.bottom, 4)
+                statusBlock
                 ConsoleLog(agent: selection.agent)
                 // The composer is a sibling under the chat, not an inset over
                 // it, so a tap in the field can never reach the chat's tap.
                 ConsoleComposer(selection: $selection)
             }
         }
+    }
+
+    /// An opaque block above the chat, so the scrolling text underneath never
+    /// shows a half-cut line through or behind it.
+    private var statusBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ScreenBanners(inList: false)
+            Text(model.statusLine)
+                .font(.footnote)
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("status-line")
+        }
+        .padding(.horizontal, Theme.screenPadding)
+        .padding(.top, 4)
+        .padding(.bottom, 10)
+        .background(Theme.chatBackground)
     }
 }
 
@@ -58,7 +66,9 @@ struct ConsoleLog: View {
                         .onDisappear { atBottom = false }
                 }
                 .padding(.horizontal, Theme.screenPadding)
-                .padding(.top, 4)
+                // A clear gap below the status block, so the topmost visible
+                // row of a scrolled chat is never flush against it.
+                .padding(.top, 14)
                 .frame(maxWidth: 700)
                 .frame(maxWidth: .infinity)
             }
@@ -67,7 +77,7 @@ struct ConsoleLog: View {
             // does when the keyboard opens.
             .defaultScrollAnchor(.bottom)
             .simultaneousGesture(TapGesture().onEnded { Keyboard.dismiss() })
-            .onReceive(model.$consoleLines) { transcript.update($0) }
+            .onReceive(model.$consoleLines) { transcript.update($0, demo: model.isDemo) }
             // The keyboard shrinks the chat. When you were at the bottom, stay there,
             // so the newest message stays above the composer.
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
@@ -85,7 +95,7 @@ struct ConsoleLog: View {
                 if atBottom { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
             }
             .onAppear {
-                transcript.update(model.consoleLines)
+                transcript.update(model.consoleLines, demo: model.isDemo)
                 DispatchQueue.main.async { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
             }
         }

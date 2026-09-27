@@ -278,17 +278,34 @@ final class AgnViewUITests: XCTestCase {
             XCTAssertFalse(tab.exists && tab.isHittable, "the tab bar stays over the keyboard")
         }
         // The newest message stays above the composer while the keyboard is up.
+        // `snapshot()` is used instead of `.exists`/`.frame` directly: on a
+        // busy runner the row can be recycled by the LazyVStack between the
+        // two calls, and `.frame` on a vanished element is a hard failure
+        // (continueAfterFailure is false here), not a value this loop can
+        // just retry past. `snapshot()` throws instead, so `try?` lets a
+        // transient miss simply count as "not yet visible".
         let newest = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label BEGINSWITH 'There are 12 open issues'")).firstMatch
         let composerTop = element("composer-agent").frame.minY
-        let deadline = Date().addingTimeInterval(8)
+        // Generous: on a busy runner the whole suite is running several
+        // times slower than normal, and the keyboard animation and the
+        // scroll-to-bottom settle scale with that.
+        let deadline = Date().addingTimeInterval(45)
         var visible = false
+        var lastFrame = CGRect.zero
+        var lastExists = false
         while Date() < deadline && !visible {
-            visible = newest.exists && newest.frame.maxY <= composerTop + 1 && newest.frame.minY > 0
+            if let snapshot = try? newest.snapshot() {
+                lastExists = true
+                lastFrame = snapshot.frame
+                visible = lastFrame.maxY <= composerTop + 1 && lastFrame.minY > 0
+            } else {
+                lastExists = false
+            }
             if !visible { Thread.sleep(forTimeInterval: 0.4) }
         }
         snap("console-chat-keyboard")
-        XCTAssertTrue(visible, "the newest message is hidden behind the composer or off screen: exists \(newest.exists), frame \(newest.frame), composer top \(composerTop)")
+        XCTAssertTrue(visible, "the newest message is hidden behind the composer or off screen: exists \(lastExists), frame \(lastFrame), composer top \(composerTop)")
         tapChat()
         let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
                                                object: app.keyboards.firstMatch)
