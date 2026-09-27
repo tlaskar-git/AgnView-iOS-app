@@ -17,7 +17,12 @@ final class MarketingVideoTests: DemoUITestCase {
     /// The pacing sleeps exist only so the recording is watchable: each one
     /// gives a viewer time to read the screen before the next action.
     func testRecording() throws {
-        launchUnpaired(appearance: "light")
+        // No -appearance launch override: that sets the UserDefaults argument
+        // domain, which would silently defeat the Settings appearance toggle
+        // below (the picker would show Dark selected but the color scheme
+        // would never actually change, since the argument domain outranks
+        // whatever the app writes to its own domain at runtime).
+        launchUnpaired(appearance: "")
         need("state-onboarding", timeout: 30)
         Thread.sleep(forTimeInterval: 2)
         need("state-onboarding-demo")
