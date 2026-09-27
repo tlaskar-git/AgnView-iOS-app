@@ -9,11 +9,11 @@ struct ConsoleView: View {
     var body: some View {
         ScreenChrome(screen: .console) {
             VStack(spacing: 0) {
-                // The status block is a top inset of the chat: an opaque
-                // block that the chat starts below, so no half-cut line of
-                // scrolled text ever shows behind it.
-                ConsoleLog(agent: selection.agent)
-                    .safeAreaInset(edge: .top, spacing: 0) { statusBlock }
+                // The status block is a top inset of the chat's own scroll
+                // view (set inside ConsoleLog): an opaque block that the chat
+                // starts below, so no half-cut line of scrolled text ever
+                // shows behind it.
+                ConsoleLog(agent: selection.agent) { statusBlock }
                 // The composer is a sibling under the chat, not an inset over
                 // it, so a tap in the field can never reach the chat's tap.
                 ConsoleComposer(selection: $selection)
@@ -42,9 +42,13 @@ struct ConsoleView: View {
 /// The conversation: your prompts as bubbles on the right, agent replies as
 /// plain text on the left. It follows new output while you are at the bottom,
 /// and the keyboard closes when you scroll, swipe down or tap the chat.
-struct ConsoleLog: View {
+struct ConsoleLog<Top: View>: View {
     /// The agent the composer has chosen, for the empty state.
     let agent: String
+    /// The status block, set as a safe-area inset of the scroll view itself
+    /// so it keeps its own reported size and the keyboard-tracking logic
+    /// below sees the same content offsets as before it existed.
+    let top: Top
 
     @EnvironmentObject private var model: AppModel
     @StateObject private var transcript = TranscriptModel()
@@ -52,6 +56,11 @@ struct ConsoleLog: View {
     @State private var pinnedForKeyboard = false
 
     private static let bottomId = "console-bottom"
+
+    init(agent: String, @ViewBuilder top: () -> Top) {
+        self.agent = agent
+        self.top = top()
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -72,6 +81,7 @@ struct ConsoleLog: View {
                 .frame(maxWidth: 700)
                 .frame(maxWidth: .infinity)
             }
+            .safeAreaInset(edge: .top, spacing: 0) { top }
             .scrollDismissesKeyboard(.interactively)
             // Keeps the newest message in place when the chat resizes, as it
             // does when the keyboard opens.
