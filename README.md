@@ -4,7 +4,7 @@ AgnView iOS is the iOS and iPadOS companion for the public [AgnView hub](https:/
 
 ## Status
 
-Design prototype plus a SwiftUI app shell with placeholder screens. Pairing and live hub access are not built yet.
+Shipping SwiftUI app, version 1.0.6, ready for App Store submission. Pairing, live hub access, Console, Sessions, Pipelines and Usage are all built, alongside a built-in demo mode with sample data. `mockups/ios-prototype.html` remains as the original clickable prototype the app was designed from.
 
 ## Folder map
 
