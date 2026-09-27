@@ -10,9 +10,8 @@ struct ConsoleView: View {
         ScreenChrome(screen: .console) {
             VStack(spacing: 0) {
                 // The status block is a top inset of the chat: an opaque
-                // block that the chat starts below. Text that scrolls up
-                // never shows behind it, and a short fade under it hides a
-                // half-cut line at the edge.
+                // block that the chat starts below, so no half-cut line of
+                // scrolled text ever shows behind it.
                 ConsoleLog(agent: selection.agent)
                     .safeAreaInset(edge: .top, spacing: 0) { statusBlock }
                 // The composer is a sibling under the chat, not an inset over
@@ -34,19 +33,8 @@ struct ConsoleView: View {
         }
         .padding(.horizontal, Theme.screenPadding)
         .padding(.top, 4)
-        .padding(.bottom, 2)
+        .padding(.bottom, 8)
         .background(Theme.chatBackground)
-        .overlay(alignment: .bottom) {
-            // Solid for the first stretch, so a cut line is hidden, then a soft fade.
-            LinearGradient(stops: [.init(color: Theme.chatBackground, location: 0),
-                                   .init(color: Theme.chatBackground, location: 0.5),
-                                   .init(color: Theme.chatBackground.opacity(0), location: 1)],
-                           startPoint: .top, endPoint: .bottom)
-                .frame(height: 44)
-                .offset(y: 44)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        }
         .zIndex(1)
     }
 }
@@ -80,8 +68,7 @@ struct ConsoleLog: View {
                         .onDisappear { atBottom = false }
                 }
                 .padding(.horizontal, Theme.screenPadding)
-                // Room under the status fade, so the first line is never washed out.
-                .padding(.top, 24)
+                .padding(.top, 4)
                 .frame(maxWidth: 700)
                 .frame(maxWidth: .infinity)
             }
