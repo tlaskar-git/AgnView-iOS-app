@@ -1,0 +1,26 @@
+{
+  "locale": "en-US",
+  "name": "Test App",
+  "subtitle": "A short test subtitle",
+  "promotionalText": "Placeholder promotional text for tests.",
+  "description": "Placeholder description text for tests only.\n\nSecond paragraph of placeholder text.",
+  "keywords": "test,placeholder,example",
+  "whatsNew": "Placeholder release notes for tests.",
+  "supportUrl": "https://example.test/support",
+  "marketingUrl": "https://example.test/",
+  "privacyPolicyUrl": "https://example.test/privacy",
+  "copyright": "2026 Example Test",
+  "primaryCategory": "DEVELOPER_TOOLS",
+  "secondaryCategory": "PRODUCTIVITY",
+  "contentRightsDeclaration": "DOES_NOT_USE_THIRD_PARTY_CONTENT",
+  "ageRating": {
+    "advertising": false,
+    "gambling": false,
+    "violenceRealistic": "NONE",
+    "alcoholTobaccoOrDrugUseOrReferences": "NONE",
+    "messagingAndChat": false,
+    "userGeneratedContent": false
+  },
+  "reviewNotes": "Placeholder review notes for tests.",
+  "reviewDemoRequired": false
+}

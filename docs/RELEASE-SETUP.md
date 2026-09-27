@@ -165,6 +165,100 @@ All signing tool output in the workflows passes through `Tools/ci/redact_log.py`
 | Archive or export fails | Read the Xcode error. Usual causes are a wrong certificate password or a profile that does not match the App ID. |
 | `altool` validation fails | Read the message. Usual causes are a wrong API key role, an app record that does not exist, or a build number that is not higher than the last upload. |
 
+## App Store Connect automation
+
+The `appstore-connect` workflow runs `Tools/asc/asc_tool.py` against the App Store Connect API. It has two modes.
+
+- `check` only reads. It prints what is still missing before the app can go to App Review.
+- `apply` writes everything the API allows, from `AppStore/listing.json`: listing text, categories, age rating, content rights, copyright, the version string, the build, App Review notes, screenshots, a Free price and availability. It skips a step when the data is missing. It changes only values that differ, so a second run writes nothing.
+
+Neither mode submits the app. It never creates a review submission and it never deletes anything, apart from replacing one screenshot set when you ask for that. You still press Submit for Review yourself.
+
+The workflow uses the secrets `ASC_API_KEY_ID`, `ASC_API_ISSUER_ID`, `ASC_API_KEY_P8_BASE64` and `APP_BUNDLE_ID` from the `release` environment. Each run waits for your approval click in that environment.
+
+### Run it
+
+1. Open the repository on GitHub, then Actions, then `appstore-connect`.
+2. Select Run workflow, keep `mode` on `check` and run it.
+3. Approve the run when the `release` environment asks.
+4. Read the job log or the job summary. Both hold the same lines.
+
+For `apply`, choose `mode` `apply`. Give `screenshots_run_id` the run id of an `appstore-screenshots` run to upload its screenshots. The artifact `appstore-screenshots` must hold one folder per display type, for example `APP_IPHONE_67` and `APP_IPAD_PRO_3GEN_129`, each with numbered PNG files. Tick `replace_screenshots` only to replace a set that already holds screenshots. Without it the tool leaves an existing set alone.
+
+The tool checks every screenshot against the accepted pixel sizes of its display type before it uploads anything. It uploads in Apple's three steps: reserve the screenshot, send the file parts, then confirm with the MD5 checksum and wait until Apple reports the upload complete.
+
+`apply` has these extra inputs. All have safe defaults.
+
+| Input | Default | Meaning |
+|---|---|---|
+| `set_version` | `auto` | `auto` sets the editable version string to the version of the newest valid build, then attaches that build. `keep` leaves the version alone. A value such as `0.1.5` sets that version. The tool refuses when the version is not editable. |
+| `territories` | `all` | `all` makes the app available in every territory, including new ones. A list such as `USA,IRL` makes it available in those only. |
+| `locale` | empty | The locale that receives the listing text. Empty means the app's primary locale. |
+
+### Target locale
+
+`AppStore/listing.json` is the text source. Its `locale` key names the language of the text. The tool writes that text to the app's primary locale, which it reads from the app record, for both the version localisation and the app info localisation. Set the `locale` input to write to another locale instead. Every run prints the target locale as `INFO target locale`, and `INFO listing text` when the source locale differs from the target.
+
+### Version and build
+
+The API attaches only a build whose version equals the editable version. The editable version of a new app is `1.0`. With `set_version` `auto`, `apply` first changes the editable version string to the version of the newest valid build, then attaches the newest valid build of that version. `check` prints a `MISSING version string` line when the two differ and says what `apply` will do. The lines `SET version` and `SET build` name the version and the build number. Neither is secret.
+
+### Output lines
+
+| Line | Meaning |
+|---|---|
+| `PASS <item>` | The item is done. |
+| `MISSING <item>: <what to do>` | The item blocks submission. Run `apply` or use the page named in the line. |
+| `INFO <item>` | A state for your information, or an optional field that is empty. |
+| `SET <item>` | `apply` wrote this value. |
+| `SKIP <item>: <reason>` | `apply` did nothing for this item. The reason says why. |
+| `FAIL <item>: <reason>` | An API call failed. The other steps still ran. The run ends with a failed status. |
+| `MANUAL <item>` | The API cannot do this. You must. |
+| `ERROR <topic>` | The run stopped. Fix the secret, the key role or the listing file. |
+
+`check` exits with status 0 whatever it finds. It exits with status 2 when the API is unreachable or rejects the credentials. `apply` exits with status 1 when a step fails.
+
+No line shows a bundle ID, key ID, issuer ID, team ID, name, email, phone number or account identifier. Every line passes through a filter that removes secret values and anything that looks like an identifier, an email or a token.
+
+### What the first real run printed
+
+The first real `check` run produced these line types. No line showed an identifier.
+
+- `PASS` for the app record, the editable version, the newest processed build and the app info name.
+- `MISSING` for content rights, copyright, version localisation fields (description, keywords, support URL), screenshots for both display types, App Review details, primary category, privacy policy URL, age rating answers and availability.
+- `INFO` for optional fields that were empty and for two reads that failed: the attached build (Apple rejects the `include` parameter on that call) and the price schedule (Apple answers with an empty stub, and the prices call on that stub returns 404). The tool now handles both. A fresh app now prints no `could not be read` line.
+- `MANUAL` for the App Privacy questionnaire, export compliance and Submit for Review.
+
+### Run order
+
+1. Merge the change that adds `AppStore/listing.json`.
+2. Run `appstore-connect` with `mode` `check`. Read the `MISSING` lines.
+3. Run `appstore-screenshots` and note its run id.
+4. Run `appstore-connect` with `mode` `apply`, `set_version` `auto` and `screenshots_run_id` set. Add `replace_screenshots` only to replace a set.
+5. Run `appstore-connect` with `mode` `check` again. Only the manual items must remain.
+6. Do the manual items below.
+7. Press Submit for Review in App Store Connect.
+
+### Review contact secrets
+
+App Review needs a contact person. Add these four secrets to the `release` environment if you want `apply` to set them.
+
+- `REVIEW_CONTACT_FIRST_NAME`
+- `REVIEW_CONTACT_LAST_NAME`
+- `REVIEW_CONTACT_PHONE`, with the country code
+- `REVIEW_CONTACT_EMAIL`
+
+`apply` writes the contact only when all four are present. Otherwise it prints `SKIP review contact` and `check` reports the fields as `MISSING`. The values are never printed. You can also type the contact into App Store Connect yourself.
+
+### What stays manual
+
+- App Privacy questionnaire. The API cannot set it. Answer Data Not Collected in App Store Connect, App Privacy.
+- Export compliance. It is set per build. Confirm that the build shows no Missing Compliance.
+- Submit for Review. Press it yourself once `check` shows nothing missing.
+- Demo account details, if you ever turn on `reviewDemoRequired`. The tool sets the flag but not the credentials.
+
+The tests for the tool run in the `asc-tests` workflow with a fake HTTP layer. They need no secrets.
+
 ## f. Export compliance
 
 Answer the export compliance question in App Store Connect when the first build appears. This repository makes no claim and sets no encryption key in the app configuration.
