@@ -33,13 +33,17 @@ struct ConsoleView: View {
                 .accessibilityIdentifier("status-line")
         }
         .padding(.horizontal, Theme.screenPadding)
-        .padding(.bottom, 6)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
         .background(Theme.chatBackground)
         .overlay(alignment: .bottom) {
-            LinearGradient(colors: [Theme.chatBackground, Theme.chatBackground.opacity(0)],
+            // Solid for the first stretch, so a cut line is hidden, then a soft fade.
+            LinearGradient(stops: [.init(color: Theme.chatBackground, location: 0),
+                                   .init(color: Theme.chatBackground, location: 0.5),
+                                   .init(color: Theme.chatBackground.opacity(0), location: 1)],
                            startPoint: .top, endPoint: .bottom)
-                .frame(height: 24)
-                .offset(y: 24)
+                .frame(height: 44)
+                .offset(y: 44)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
@@ -77,7 +81,7 @@ struct ConsoleLog: View {
                 }
                 .padding(.horizontal, Theme.screenPadding)
                 // Room under the status fade, so the first line is never washed out.
-                .padding(.top, 24)
+                .padding(.top, 40)
                 .frame(maxWidth: 700)
                 .frame(maxWidth: .infinity)
             }
