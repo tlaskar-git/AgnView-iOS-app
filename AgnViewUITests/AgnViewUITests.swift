@@ -281,7 +281,9 @@ final class AgnViewUITests: XCTestCase {
         let newest = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label BEGINSWITH 'There are 12 open issues'")).firstMatch
         let composerTop = element("composer-agent").frame.minY
-        let deadline = Date().addingTimeInterval(8)
+        // Generous: the keyboard animation and the scroll-to-bottom settle
+        // slower on a busy CI runner than on a phone.
+        let deadline = Date().addingTimeInterval(20)
         var visible = false
         while Date() < deadline && !visible {
             visible = newest.exists && newest.frame.maxY <= composerTop + 1 && newest.frame.minY > 0

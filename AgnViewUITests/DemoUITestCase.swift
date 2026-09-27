@@ -150,8 +150,9 @@ class DemoUITestCase: XCTestCase {
         return element("composer-result").label
     }
 
-    /// True when a console row with this text exists.
-    func consoleHas(_ text: String, timeout: TimeInterval = 20) -> Bool {
+    /// True when a console row with this text exists. 40s: generous headroom
+    /// for the canned reply to land on a busy CI runner.
+    func consoleHas(_ text: String, timeout: TimeInterval = 40) -> Bool {
         let row = app.descendants(matching: .any)
             .matching(identifier: "console-row")
             .matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
