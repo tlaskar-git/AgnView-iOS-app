@@ -109,10 +109,8 @@ struct ConsoleLog: View {
                     }
                     .padding(.trailing, Theme.screenPadding)
                     .padding(.bottom, 10)
-                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
                 }
             }
-            .animation(.easeOut(duration: 0.2), value: atBottom)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay {
