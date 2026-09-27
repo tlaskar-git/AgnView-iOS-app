@@ -100,7 +100,8 @@ class DemoUITestCase: XCTestCase {
             XCTAssertNotNil(row, "sidebar item \(name) missing")
             row?.tap()
         } else {
-            let tab = app.tabBars.buttons[name]
+            // The floating tab bar draws its own buttons: tab-sessions, tab-console and so on.
+            let tab = app.buttons["tab-" + name.lowercased()]
             XCTAssertTrue(tab.waitForExistence(timeout: 20), "tab \(name) missing")
             tab.tap()
         }
@@ -125,11 +126,14 @@ class DemoUITestCase: XCTestCase {
         XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed)
     }
 
-    /// Closes the keyboard when it is open.
+    /// Closes the keyboard when it is open. There is no Done button: a tap on
+    /// the chat closes it, and the tab bar comes back.
     func closeKeyboard() {
         guard app.keyboards.firstMatch.exists else { return }
-        let done = element("keyboard-done")
-        if done.exists { done.tap() } else { element("console-log").tap() }
+        element("console-log").tap()
+        let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
+                                               object: app.keyboards.firstMatch)
+        _ = XCTWaiter().wait(for: [closed], timeout: 10)
     }
 
     /// Types a prompt and sends it. The demo answers with a built-in reply.
