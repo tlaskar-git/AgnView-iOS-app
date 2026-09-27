@@ -8,6 +8,7 @@ name: marketing-video
 
 on:
   workflow_dispatch:
+  pull_request:
 
 permissions:
   contents: read
@@ -19,6 +20,11 @@ concurrency:
 jobs:
   record:
     name: record
+    # The pull_request trigger exists only so this can run before the
+    # workflow file itself reaches main (workflow_dispatch needs the
+    # workflow to already exist on the default branch). Restrict it to this
+    # development branch so it does not run on every unrelated PR.
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'bot/p13-docs-listing-accuracy'
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
