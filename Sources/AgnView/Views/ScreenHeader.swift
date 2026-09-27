@@ -34,10 +34,12 @@ struct RoutePill: View {
         return false
     }
 
-    private var label: String { Self.label(route: model.route, connecting: connecting) }
+    private var label: String {
+        model.isDemo ? UserMessages.demoRouteLabel : Self.label(route: model.route, connecting: connecting)
+    }
 
     private var tint: Color {
-        connecting ? Theme.textSecondary : Theme.routeColor(model.route)
+        model.isDemo ? Theme.warning : (connecting ? Theme.textSecondary : Theme.routeColor(model.route))
     }
 
     var body: some View {

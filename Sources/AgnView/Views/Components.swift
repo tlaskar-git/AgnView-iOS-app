@@ -148,6 +148,8 @@ struct StateView: View {
     /// Always offered, so no state can trap the user away from Settings.
     var settingsTitle = "Switch machine"
     var settings: (() -> Void)?
+    /// Extra views under the buttons, such as a link.
+    var accessory: AnyView?
 
     var body: some View {
         VStack(spacing: 16) {
@@ -176,6 +178,7 @@ struct StateView: View {
                     .controlSize(.large)
                     .accessibilityIdentifier(identifier + "-secondary")
             }
+            if let accessory { accessory }
             if let settings {
                 Button(settingsTitle, action: settings)
                     .frame(minHeight: Theme.minTap)
@@ -311,7 +314,7 @@ struct ScreenChrome<Content: View, Actions: View>: View {
 
     private var gate: ScreenGate {
         if screen == .settings { return .none }
-        if model.hubs.isEmpty { return .noHub }
+        if model.hubs.isEmpty && !model.isDemo { return .noHub }
         switch model.connection {
         case .offline: return .offline
         case .authFailed: return .authFailed
@@ -367,6 +370,9 @@ struct ScreenChrome<Content: View, Actions: View>: View {
             .background(canvas.ignoresSafeArea())
         } else {
             content
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if model.isDemo { DemoBanner() }
+                }
         }
     }
 
@@ -376,14 +382,15 @@ struct ScreenChrome<Content: View, Actions: View>: View {
         case .noHub:
             StateView(symbol: "qrcode.viewfinder",
                       title: "Pair your computer",
-                      message: "Open AgnView on your computer, show the pairing QR code, then scan it here.",
+                      message: "AgnView for iOS is a companion. Install the free AgnView app on your Windows PC or Mac, then scan its pairing QR code here.",
                       identifier: "state-onboarding",
                       primaryTitle: "Scan QR code",
                       primary: { nav.showPairing = true },
                       secondaryTitle: "Paste pairing link",
                       secondary: { nav.showPairing = true },
                       settingsTitle: "Settings",
-                      settings: { nav.screen = .settings })
+                      settings: { nav.screen = .settings },
+                      accessory: AnyView(OnboardingLinks()))
         case .offline:
             StateView(symbol: "wifi.slash",
                       title: "Hub offline",
