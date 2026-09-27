@@ -82,7 +82,16 @@ final class DemoModeUITests: DemoUITestCase {
         let codex = menuOption("Codex", timeout: 8)
         XCTAssertTrue(codex.exists, "the agent menu never reached Codex")
         codex.tap()
-        sendPrompt("Ping from Codex")
+        let agentSwitched = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == 'Codex'"), object: element("composer-agent"))
+        XCTAssertEqual(XCTWaiter().wait(for: [agentSwitched], timeout: 5), .completed,
+                      "the composer never switched to Codex")
+        let prompt = element("composer-prompt")
+        prompt.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "the keyboard never appeared")
+        prompt.typeText("Ping from Codex")
+        element("composer-send").tap()
+        need("composer-result", timeout: 30)
         closeKeyboard()
         XCTAssertTrue(consoleHas("Demo reply"),
                       "the Codex reply is hidden, likely by a stale session filter")
