@@ -6,16 +6,9 @@ struct SessionsView: View {
     @State private var refreshing = false
 
     var body: some View {
-        ScreenChrome(screen: .sessions, trailing: { refreshButton }) {
+        ScreenChrome(screen: .sessions, actions: { actionRow }) {
             List {
                 BannerSection()
-                Section {
-                    TimelineView(.periodic(from: .now, by: 15)) { context in
-                        Text(Format.updated(from: model.sessionsUpdatedAt, to: context.date))
-                            .accessibilityIdentifier("sessions-updated")
-                    }
-                    .captionRow()
-                }
                 if let notice = model.sessionsNotice {
                     Section {
                         Banner(kind: .info, text: notice, identifier: "sessions-notice", card: false)
@@ -59,24 +52,19 @@ struct SessionsView: View {
         }
     }
 
-    private var refreshButton: some View {
-        Button {
-            Task {
-                refreshing = true
-                await model.refreshSessionsNow()
-                refreshing = false
-            }
-        } label: {
-            if refreshing {
-                ProgressView()
-            } else {
-                Label("Refresh", systemImage: "arrow.clockwise")
-                    .labelStyle(.iconOnly)
+    private var actionRow: some View {
+        ActionRow {
+            UpdatedText(date: model.sessionsUpdatedAt, busy: refreshing, identifier: "sessions-updated")
+        } trailing: {
+            ActionTextButton(title: "Refresh", busy: refreshing, disabled: refreshing,
+                             identifier: "sessions-refresh") {
+                Task {
+                    refreshing = true
+                    await model.refreshSessionsNow()
+                    refreshing = false
+                }
             }
         }
-        .disabled(refreshing)
-        .accessibilityLabel("Refresh")
-        .accessibilityIdentifier("sessions-refresh")
     }
 
     private func firstLine(for session: SessionInfo) -> String {

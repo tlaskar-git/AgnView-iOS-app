@@ -7,6 +7,10 @@ enum Screen: String, CaseIterable, Identifiable {
     case usage
     case settings
 
+    /// The order of the tabs on iPhone: Console sits in the raised centre.
+    /// The iPad sidebar keeps `allCases`, with Console first.
+    static let phoneOrder: [Screen] = [.sessions, .pipelines, .console, .usage, .settings]
+
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
     var identifier: String { "screen-" + rawValue }

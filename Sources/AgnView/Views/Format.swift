@@ -36,10 +36,14 @@ enum Format {
         return (text.hasSuffix(".0") ? String(text.dropLast(2)) : text) + "%"
     }
 
-    /// "Updated just now", "Updated 5 min ago" or "Not updated yet".
+    /// "Updated just now", "Updated 50s ago", "Updated 5 min ago" or "Not updated yet".
+    /// Under ten seconds reads "just now", under a minute reads in seconds.
     static func updated(from date: Date?, to now: Date) -> String {
         guard let date else { return "Not updated yet" }
-        return "Updated " + age(from: date, to: now)
+        let seconds = max(0, now.timeIntervalSince(date))
+        if seconds < 10 { return "Updated just now" }
+        if seconds < 60 { return "Updated \(Int(seconds))s ago" }
+        return "Updated " + age(seconds: seconds)
     }
 
     /// "Last reading 5 min ago", from an age in seconds.

@@ -73,6 +73,20 @@ final class HubStore: ObservableObject {
         activeHubId = id
     }
 
+    /// Changes the name shown on this phone. The key and the hub stay the same.
+    /// An empty name is ignored. Returns true when the name changed.
+    @discardableResult
+    func rename(id: String, to name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let index = hubs.firstIndex(where: { $0.id == id }),
+              hubs[index].name != trimmed else { return false }
+        var next = hubs
+        next[index].name = trimmed
+        guard (try? persist(hubs: next, active: activeHubId)) != nil else { return false }
+        hubs = next
+        return true
+    }
+
     /// Deletes the key and the record. Promotes the next hub when the active one goes.
     func remove(id: String) throws {
         try secrets.delete(account: id)
