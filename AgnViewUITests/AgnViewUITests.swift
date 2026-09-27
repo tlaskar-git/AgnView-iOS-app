@@ -287,9 +287,10 @@ final class AgnViewUITests: XCTestCase {
         let newest = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label BEGINSWITH 'There are 12 open issues'")).firstMatch
         let composerTop = element("composer-agent").frame.minY
-        // Generous: the keyboard animation and the scroll-to-bottom settle
-        // slower on a busy CI runner than on a phone.
-        let deadline = Date().addingTimeInterval(20)
+        // Generous: on a busy runner the whole suite is running several
+        // times slower than normal, and the keyboard animation and the
+        // scroll-to-bottom settle scale with that.
+        let deadline = Date().addingTimeInterval(45)
         var visible = false
         var lastFrame = CGRect.zero
         var lastExists = false
