@@ -9,11 +9,8 @@ struct ConsoleView: View {
     var body: some View {
         ScreenChrome(screen: .console) {
             VStack(spacing: 0) {
-                // The status block is a top inset of the chat's own scroll
-                // view (set inside ConsoleLog): an opaque block that the chat
-                // starts below, so no half-cut line of scrolled text ever
-                // shows behind it.
-                ConsoleLog(agent: selection.agent) { statusBlock }
+                statusBlock
+                ConsoleLog(agent: selection.agent)
                 // The composer is a sibling under the chat, not an inset over
                 // it, so a tap in the field can never reach the chat's tap.
                 ConsoleComposer(selection: $selection)
@@ -21,6 +18,8 @@ struct ConsoleView: View {
         }
     }
 
+    /// An opaque block above the chat, so the scrolling text underneath never
+    /// shows a half-cut line through or behind it.
     private var statusBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
             ScreenBanners(inList: false)
@@ -33,35 +32,24 @@ struct ConsoleView: View {
         }
         .padding(.horizontal, Theme.screenPadding)
         .padding(.top, 4)
-        .padding(.bottom, 8)
+        .padding(.bottom, 10)
         .background(Theme.chatBackground)
-        .zIndex(1)
     }
 }
 
 /// The conversation: your prompts as bubbles on the right, agent replies as
 /// plain text on the left. It follows new output while you are at the bottom,
 /// and the keyboard closes when you scroll, swipe down or tap the chat.
-struct ConsoleLog<Top: View>: View {
+struct ConsoleLog: View {
     /// The agent the composer has chosen, for the empty state.
     let agent: String
-    /// The status block, set as a safe-area inset of the scroll view itself
-    /// so it keeps its own reported size and the keyboard-tracking logic
-    /// below sees the same content offsets as before it existed.
-    let top: Top
 
     @EnvironmentObject private var model: AppModel
     @StateObject private var transcript = TranscriptModel()
     @State private var atBottom = true
     @State private var pinnedForKeyboard = false
 
-    // A generic type cannot hold a stored static property, so this is computed.
-    private static var bottomId: String { "console-bottom" }
-
-    init(agent: String, @ViewBuilder top: () -> Top) {
-        self.agent = agent
-        self.top = top()
-    }
+    private static let bottomId = "console-bottom"
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -78,11 +66,12 @@ struct ConsoleLog<Top: View>: View {
                         .onDisappear { atBottom = false }
                 }
                 .padding(.horizontal, Theme.screenPadding)
-                .padding(.top, 4)
+                // A clear gap below the status block, so the topmost visible
+                // row of a scrolled chat is never flush against it.
+                .padding(.top, 14)
                 .frame(maxWidth: 700)
                 .frame(maxWidth: .infinity)
             }
-            .safeAreaInset(edge: .top, spacing: 0) { top }
             .scrollDismissesKeyboard(.interactively)
             // Keeps the newest message in place when the chat resizes, as it
             // does when the keyboard opens.
