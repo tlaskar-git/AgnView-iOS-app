@@ -33,8 +33,8 @@ struct ConsoleView: View {
                 .accessibilityIdentifier("status-line")
         }
         .padding(.horizontal, Theme.screenPadding)
-        .padding(.top, 6)
-        .padding(.bottom, 8)
+        .padding(.top, 4)
+        .padding(.bottom, 2)
         .background(Theme.chatBackground)
         .overlay(alignment: .bottom) {
             // Solid for the first stretch, so a cut line is hidden, then a soft fade.
@@ -81,7 +81,7 @@ struct ConsoleLog: View {
                 }
                 .padding(.horizontal, Theme.screenPadding)
                 // Room under the status fade, so the first line is never washed out.
-                .padding(.top, 40)
+                .padding(.top, 24)
                 .frame(maxWidth: 700)
                 .frame(maxWidth: .infinity)
             }
