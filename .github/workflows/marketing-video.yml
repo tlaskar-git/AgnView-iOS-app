@@ -71,10 +71,14 @@ jobs:
         run: |
           set +x
           rm -f "$RUNNER_TEMP/marketing.mp4"
-          nohup xcrun simctl io "$UDID" recordVideo --type=mp4 --force "$RUNNER_TEMP/marketing.mp4" \
+          nohup xcrun simctl io "$UDID" recordVideo --codec=h264 --force "$RUNNER_TEMP/marketing.mp4" \
             > "$RUNNER_TEMP/record.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/record.pid"
-          sleep 2
+          for i in $(seq 1 20); do
+            grep -q "Recording started" "$RUNNER_TEMP/record.log" 2>/dev/null && break
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/record.log" || true
 
       - name: Run the recording test
         env:
