@@ -98,19 +98,6 @@ struct ConsoleLog: View {
                 transcript.update(model.consoleLines, demo: model.isDemo)
                 DispatchQueue.main.async { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
             }
-            .overlay(alignment: .bottomTrailing) {
-                // Shows only once you have scrolled away from the newest
-                // message, and jumps back there when tapped.
-                if !atBottom && !transcript.items.isEmpty {
-                    ScrollToBottomButton {
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            proxy.scrollTo(Self.bottomId, anchor: .bottom)
-                        }
-                    }
-                    .padding(.trailing, Theme.screenPadding)
-                    .padding(.bottom, 10)
-                }
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay {
@@ -119,25 +106,6 @@ struct ConsoleLog: View {
             }
         }
         .accessibilityIdentifier("console-log")
-    }
-}
-
-/// The small round button that jumps back to the newest message, shown when
-/// the conversation is scrolled away from the bottom.
-private struct ScrollToBottomButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "arrow.down")
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(.primary)
-                .frame(width: 34, height: 34)
-                .glassSurface(Circle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Scroll to latest message")
-        .accessibilityIdentifier("console-scroll-to-bottom")
     }
 }
 
