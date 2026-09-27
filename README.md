@@ -16,6 +16,11 @@ Design prototype plus a SwiftUI app shell with placeholder screens. Pairing and 
 | `assets/` | Images, fonts, icons and the vendored Tailwind play script |
 | `.githooks/` | Local pre-commit hook |
 | `.github/` | Workflows and Dependabot configuration |
+| `PRIVACY.md` | Privacy policy of the app |
+| `docs/SUPPORT.md` | Install, pairing and troubleshooting help |
+| `docs/APP-STORE-SUBMISSION.md` | Operator checklist for App Store Connect |
+| `AppStore/listing.json` | Store listing text and age rating, checked by `Tools/ci/test_listing.py` |
+| `Sources/AgnView/Demo/` | Demo mode: a built-in sample hub for App Review and first look |
 
 ## Builds
 

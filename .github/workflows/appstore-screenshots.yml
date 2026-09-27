@@ -1,0 +1,141 @@
+name: appstore-screenshots
+
+# Builds the app and captures the App Store screenshots in demo mode on an
+# iPhone 6.9-inch and an iPad 13-inch simulator. Every screenshot holds sample
+# data only. The pull_request trigger is for the development branch of this
+# work and can be removed when the screenshots are stable.
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: appstore-screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  capture:
+    name: capture (${{ matrix.device }})
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'bot/p10-app-store-ready'
+    runs-on: macos-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [iphone, ipad]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install XcodeGen
+        run: |
+          set +x
+          brew install xcodegen
+
+      - name: Generate project
+        run: |
+          set +x
+          xcodegen generate
+
+      - name: Pick simulator
+        id: sim
+        run: |
+          set +x
+          xcrun simctl list devices available
+          python3 Tools/ci/pick_screenshot_sim.py "${{ matrix.device }}" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Resolve packages
+        run: |
+          set +x
+          xcodebuild -resolvePackageDependencies -scheme AgnView
+
+      - name: Boot simulator and set the status bar
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          set +x
+          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b || true
+          xcrun simctl status_bar booted override --time 9:41 --batteryState charged --batteryLevel 100 --cellularMode active --cellularBars 4 --wifiBars 3
+
+      - name: Capture screenshots
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+          PREFIX: ${{ steps.sim.outputs.prefix }}
+        run: |
+          set +x
+          TEST_RUNNER_AGNVIEW_APPSTORE_SHOTS=1
+          TEST_RUNNER_AGNVIEW_SHOT_PREFIX="$PREFIX"
+          export TEST_RUNNER_AGNVIEW_APPSTORE_SHOTS TEST_RUNNER_AGNVIEW_SHOT_PREFIX
+          xcodebuild test \
+            -scheme AgnView \
+            -destination "platform=iOS Simulator,id=$UDID" \
+            -only-testing:AgnViewUITests/AppStoreScreenshotTests \
+            -resultBundlePath "$RUNNER_TEMP/result.xcresult" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY="-"
+
+      - name: Export screenshots
+        if: always()
+        env:
+          PREFIX: ${{ steps.sim.outputs.prefix }}
+        run: |
+          set +x
+          mkdir -p "$RUNNER_TEMP/shots"
+          if [ -d "$RUNNER_TEMP/result.xcresult" ]; then
+            xcrun xcresulttool export attachments \
+              --path "$RUNNER_TEMP/result.xcresult" \
+              --output-path "$RUNNER_TEMP/attachments"
+            python3 Tools/ci/export_appstore_screenshots.py "$RUNNER_TEMP/attachments" "$RUNNER_TEMP/shots" "$PREFIX" 8
+          else
+            echo "no result bundle found"
+            exit 1
+          fi
+
+      - name: Check pixel sizes
+        env:
+          NAME: ${{ steps.sim.outputs.name }}
+          EXACT: ${{ steps.sim.outputs.exact }}
+          SIZE: ${{ steps.sim.outputs.size }}
+        run: |
+          set +x
+          echo "simulator: $NAME (required model found: $EXACT)"
+          python3 Tools/ci/check_screenshot_sizes.py "$RUNNER_TEMP/shots" "$SIZE" 8 | tee "$RUNNER_TEMP/sizes.txt"
+          {
+            echo "### ${{ matrix.device }}: $NAME"
+            echo
+            echo "Required model found: $EXACT. Expected size: $SIZE."
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/sizes.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: appstore-screenshots-${{ matrix.device }}
+          path: ${{ runner.temp }}/shots/*.png
+          retention-days: 14
+          if-no-files-found: warn
+
+  collect:
+    name: collect
+    needs: capture
+    if: needs.capture.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Merge the device artifacts
+        uses: actions/upload-artifact/merge@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: appstore-screenshots
+          pattern: appstore-screenshots-*
+          retention-days: 14
