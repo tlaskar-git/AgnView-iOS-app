@@ -39,6 +39,7 @@ struct ConsoleLog: View {
     @EnvironmentObject private var model: AppModel
     @StateObject private var transcript = TranscriptModel()
     @State private var atBottom = true
+    @State private var pinnedForKeyboard = false
 
     private static let bottomId = "console-bottom"
 
@@ -67,11 +68,14 @@ struct ConsoleLog: View {
             // The keyboard shrinks the chat. When you were at the bottom, stay there,
             // so the newest message stays above the composer.
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-                guard atBottom else { return }
-                for delay in [0.05, 0.35] {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                        proxy.scrollTo(Self.bottomId, anchor: .bottom)
-                    }
+                pinnedForKeyboard = atBottom
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
+                guard pinnedForKeyboard else { return }
+                proxy.scrollTo(Self.bottomId, anchor: .bottom)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    proxy.scrollTo(Self.bottomId, anchor: .bottom)
+                    pinnedForKeyboard = false
                 }
             }
             .onChange(of: transcript.revision) { _, _ in

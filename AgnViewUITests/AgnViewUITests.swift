@@ -277,6 +277,17 @@ final class AgnViewUITests: XCTestCase {
             let tab = element("tab-sessions")
             XCTAssertFalse(tab.exists && tab.isHittable, "the tab bar stays over the keyboard")
         }
+        // The newest message stays above the composer while the keyboard is up.
+        let newest = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH 'There are 12 open issues'")).firstMatch
+        let composerTop = element("composer-agent").frame.minY
+        let deadline = Date().addingTimeInterval(8)
+        var visible = false
+        while Date() < deadline && !visible {
+            visible = newest.exists && newest.frame.maxY <= composerTop + 1 && newest.frame.minY > 0
+            if !visible { Thread.sleep(forTimeInterval: 0.4) }
+        }
+        XCTAssertTrue(visible, "the newest message is hidden behind the composer or off screen")
         snap("console-chat-keyboard")
         tapChat()
         let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
