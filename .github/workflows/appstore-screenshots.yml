@@ -49,7 +49,13 @@ jobs:
           xcrun simctl list devices available
           python3 Tools/ci/pick_screenshot_sim.py "${{ matrix.device }}" | tee -a "$GITHUB_OUTPUT"
           case "${{ matrix.device }}" in
-            iphone) echo "display_type=APP_IPHONE_69" >> "$GITHUB_OUTPUT" ;;
+            # This app's App Store Connect record does not accept
+            # APP_IPHONE_69 as a screenshotDisplayType (confirmed against
+            # the live API: HTTP 409 ENTITY_ERROR.ATTRIBUTE.TYPE, valid
+            # values did not include it). APP_IPHONE_67 accepts the same
+            # pixel sizes (Tools/asc/asc_tool.py DISPLAY_SIZES) and is the
+            # correct bucket for the 6.9-inch screenshots on this account.
+            iphone) echo "display_type=APP_IPHONE_67" >> "$GITHUB_OUTPUT" ;;
             ipad)   echo "display_type=APP_IPAD_PRO_3GEN_129" >> "$GITHUB_OUTPUT" ;;
           esac
 
