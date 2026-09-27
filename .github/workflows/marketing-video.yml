@@ -65,6 +65,17 @@ jobs:
           xcrun simctl bootstatus "$UDID" -b || true
           xcrun simctl status_bar booted override --time 9:41 --batteryState charged --batteryLevel 100 --cellularMode active --cellularBars 4 --wifiBars 3
 
+      - name: Build for testing
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          set +x
+          xcodebuild build-for-testing \
+            -scheme AgnView \
+            -destination "platform=iOS Simulator,id=$UDID" \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY="-"
+
       - name: Start recording
         env:
           UDID: ${{ steps.sim.outputs.udid }}
@@ -87,9 +98,10 @@ jobs:
           set +x
           TEST_RUNNER_AGNVIEW_MARKETING_VIDEO=1
           export TEST_RUNNER_AGNVIEW_MARKETING_VIDEO
-          xcodebuild test \
+          xcodebuild test-without-building \
             -scheme AgnView \
             -destination "platform=iOS Simulator,id=$UDID" \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
             -only-testing:AgnViewUITests/MarketingVideoTests \
             -resultBundlePath "$RUNNER_TEMP/result.xcresult" \
             -parallel-testing-enabled NO \
