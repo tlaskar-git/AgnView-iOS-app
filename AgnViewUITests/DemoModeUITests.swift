@@ -70,6 +70,24 @@ final class DemoModeUITests: DemoUITestCase {
         XCTAssertFalse(confirmation.contains("dispatched") || confirmation.contains("Session"))
     }
 
+    /// Opening a session from Sessions must never leave the console stuck
+    /// showing one agent only: every agent's reply keeps rendering after it.
+    func testOpeningASessionDoesNotHideOtherAgentsReplies() throws {
+        startDemoFromOnboarding()
+        open("Sessions")
+        need("session-row", timeout: 30)
+        element("session-row").tap()
+        waitForComposer()
+        element("composer-agent").tap()
+        let codex = menuOption("Codex", timeout: 8)
+        XCTAssertTrue(codex.exists, "the agent menu never reached Codex")
+        codex.tap()
+        sendPrompt("Ping from Codex")
+        closeKeyboard()
+        XCTAssertTrue(consoleHas("Demo reply"),
+                      "the Codex reply is hidden, likely by a stale session filter")
+    }
+
     func testDemoCreatesAPipelineAndRefreshWorks() throws {
         startDemoFromOnboarding()
         open("Pipelines")
