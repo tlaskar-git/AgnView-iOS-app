@@ -11,7 +11,7 @@ Open the app and tap Try the demo. Every screen works with built-in sample data.
 1. Open https://github.com/tlaskar-git/AgnView/releases/latest on your computer.
 2. Download the installer for Windows or the build for Mac.
 3. Install it and start AgnView.
-4. Install and sign in to the agents you want to use (Claude Code, Codex, AntiGravity). AgnView finds them on your computer.
+4. Install and sign in to the agents you want to use (Claude Code, Codex, AntiGravity, DeepSeek). AgnView finds them on your computer.
 
 For remote access away from your Wi-Fi, use AgnView 0.1.12 or later. To create pipelines away from your Wi-Fi, use 0.1.13 or later.
 

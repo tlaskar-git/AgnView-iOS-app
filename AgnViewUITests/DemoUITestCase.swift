@@ -25,9 +25,15 @@ class DemoUITestCase: XCTestCase {
     }
 
     /// Launches with no machine paired. `appearance` is light, dark or system.
+    /// An empty string skips the launch argument entirely: `-appearance` sets
+    /// the UserDefaults argument domain, which outranks the application
+    /// domain, so a test that also wants to toggle the in-app Appearance
+    /// picker (Settings) and see it take effect must launch with no override.
     func launchUnpaired(appearance: String = "light") {
         app = XCUIApplication()
-        app.launchArguments += ["-appearance", appearance]
+        if !appearance.isEmpty {
+            app.launchArguments += ["-appearance", appearance]
+        }
         app.launch()
     }
 

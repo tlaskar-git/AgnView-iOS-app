@@ -1,0 +1,132 @@
+name: marketing-video
+
+# Records a short vertical screen capture of the app in demo mode, for social
+# media (not for App Store submission). Runs the MarketingVideoTests UI test
+# on an iPhone simulator while `xcrun simctl io recordVideo` captures the
+# screen, then uploads the MP4 as a workflow artifact. Every screen shows
+# demo data only.
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: marketing-video-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  record:
+    name: record
+    # The pull_request trigger exists only so this can run before the
+    # workflow file itself reaches main (workflow_dispatch needs the
+    # workflow to already exist on the default branch). Restrict it to this
+    # development branch so it does not run on every unrelated PR.
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'bot/p13-docs-listing-accuracy'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install XcodeGen
+        run: |
+          set +x
+          brew install xcodegen
+
+      - name: Generate project
+        run: |
+          set +x
+          xcodegen generate
+
+      - name: Pick simulator
+        id: sim
+        run: |
+          set +x
+          xcrun simctl list devices available
+          python3 Tools/ci/pick_screenshot_sim.py iphone | tee -a "$GITHUB_OUTPUT"
+
+      - name: Resolve packages
+        run: |
+          set +x
+          xcodebuild -resolvePackageDependencies -scheme AgnView
+
+      - name: Boot simulator and set the status bar
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          set +x
+          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b || true
+          xcrun simctl status_bar booted override --time 9:41 --batteryState charged --batteryLevel 100 --cellularMode active --cellularBars 4 --wifiBars 3
+
+      - name: Build for testing
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          set +x
+          xcodebuild build-for-testing \
+            -scheme AgnView \
+            -destination "platform=iOS Simulator,id=$UDID" \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY="-"
+
+      - name: Start recording
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          set +x
+          rm -f "$RUNNER_TEMP/marketing.mp4"
+          nohup xcrun simctl io "$UDID" recordVideo --codec=h264 --force "$RUNNER_TEMP/marketing.mp4" \
+            > "$RUNNER_TEMP/record.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/record.pid"
+          for i in $(seq 1 20); do
+            grep -q "Recording started" "$RUNNER_TEMP/record.log" 2>/dev/null && break
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/record.log" || true
+
+      - name: Run the recording test
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          set +x
+          TEST_RUNNER_AGNVIEW_MARKETING_VIDEO=1
+          export TEST_RUNNER_AGNVIEW_MARKETING_VIDEO
+          xcodebuild test-without-building \
+            -scheme AgnView \
+            -destination "platform=iOS Simulator,id=$UDID" \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            -only-testing:AgnViewUITests/MarketingVideoTests \
+            -resultBundlePath "$RUNNER_TEMP/result.xcresult" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY="-"
+
+      - name: Stop recording
+        if: always()
+        run: |
+          set +x
+          if [ -f "$RUNNER_TEMP/record.pid" ]; then
+            kill -INT "$(cat "$RUNNER_TEMP/record.pid")" || true
+          fi
+          for i in $(seq 1 20); do
+            [ -s "$RUNNER_TEMP/marketing.mp4" ] && break
+            sleep 1
+          done
+          sleep 2
+          cat "$RUNNER_TEMP/record.log" || true
+          ls -la "$RUNNER_TEMP/marketing.mp4" || true
+
+      - name: Upload video
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: marketing-video
+          path: ${{ runner.temp }}/marketing.mp4
+          retention-days: 14
+          if-no-files-found: warn

@@ -10,7 +10,7 @@ Use this list to test the TestFlight build on a real iPhone against the AgnView 
 - [ ] The phone and the PC are on the same Wi-Fi.
 - [ ] In the hub, **Allow phones on my network** is ON (tray menu or pairing screen). Part A needs it.
 - [ ] If Windows asks to let the hub through the firewall, allow it on private networks.
-- [ ] Claude Code, Codex and AntiGravity are installed on the PC if you want to test them.
+- [ ] Claude Code, Codex, AntiGravity and DeepSeek are installed on the PC if you want to test them.
 
 ## 2. Install
 
@@ -32,6 +32,7 @@ Use this list to test the TestFlight build on a real iPhone against the AgnView 
    - [ ] Claude Code replies.
    - [ ] Codex replies.
    - [ ] AntiGravity replies.
+   - [ ] DeepSeek replies.
 8. In the Console composer, check the controls.
    - [ ] The chips **Agent**, **Model** and **Effort**, the plus button, the prompt field and **Send** show in one floating card.
    - [ ] Open the **Agent** menu. It lists Claude Code, Codex, AntiGravity, DeepSeek in that order, and the order stays the same when you pick another agent.
