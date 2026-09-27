@@ -55,7 +55,8 @@ struct ConsoleLog<Top: View>: View {
     @State private var atBottom = true
     @State private var pinnedForKeyboard = false
 
-    private static let bottomId = "console-bottom"
+    // A generic type cannot hold a stored static property, so this is computed.
+    private static var bottomId: String { "console-bottom" }
 
     init(agent: String, @ViewBuilder top: () -> Top) {
         self.agent = agent
