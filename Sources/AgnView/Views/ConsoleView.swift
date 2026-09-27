@@ -63,6 +63,9 @@ struct ConsoleLog: View {
                 .frame(maxWidth: .infinity)
             }
             .scrollDismissesKeyboard(.interactively)
+            // Keeps the newest message in place when the chat resizes, as it
+            // does when the keyboard opens.
+            .defaultScrollAnchor(.bottom)
             .simultaneousGesture(TapGesture().onEnded { Keyboard.dismiss() })
             .onReceive(model.$consoleLines) { transcript.update($0) }
             // The keyboard shrinks the chat. When you were at the bottom, stay there,

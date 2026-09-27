@@ -287,8 +287,8 @@ final class AgnViewUITests: XCTestCase {
             visible = newest.exists && newest.frame.maxY <= composerTop + 1 && newest.frame.minY > 0
             if !visible { Thread.sleep(forTimeInterval: 0.4) }
         }
-        XCTAssertTrue(visible, "the newest message is hidden behind the composer or off screen")
         snap("console-chat-keyboard")
+        XCTAssertTrue(visible, "the newest message is hidden behind the composer or off screen: exists \(newest.exists), frame \(newest.frame), composer top \(composerTop)")
         tapChat()
         let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
                                                object: app.keyboards.firstMatch)
