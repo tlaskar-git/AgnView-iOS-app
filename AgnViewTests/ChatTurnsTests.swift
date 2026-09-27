@@ -164,6 +164,23 @@ final class ChatTurnsTests: XCTestCase {
         XCTAssertEqual(builder.items, [])
     }
 
+    // MARK: Demo clock
+
+    func testDemoModeLabelsShowAFixedClockNotTheRunnerTime() {
+        let lines = [line(1, "user", "q", time: "2026-01-02T01:58:00Z"),
+                     line(2, "claude_code", "a", time: "2026-01-02T01:58:20Z"),
+                     line(3, "user", "later", time: "2026-01-02T02:10:00Z")]
+        var builder = ChatBuilder(calendar: calendar)
+        builder.sync(lines, now: now, demoClock: true)
+        let labels = builder.items.compactMap { item -> String? in
+            if case .separator(_, let text) = item { return text } else { return nil }
+        }
+        XCTAssertEqual(labels, ["Today, 09:41", "09:53"], "first label is 09:41, the gap is kept")
+        var live = ChatBuilder(calendar: calendar)
+        live.sync(lines, now: now)
+        XCTAssertTrue(live.items.contains(.separator(id: "tu1", text: "Today, 01:58")), "real clock is unchanged")
+    }
+
     // MARK: Streaming
 
     func testStreamingRule() {

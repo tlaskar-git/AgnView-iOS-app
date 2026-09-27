@@ -229,8 +229,8 @@ final class TranscriptModel: ObservableObject {
 
     private var builder = ChatBuilder()
 
-    func update(_ lines: [ConsoleLine]) {
-        if builder.sync(lines) {
+    func update(_ lines: [ConsoleLine], demo: Bool = false) {
+        if builder.sync(lines, demoClock: demo) {
             items = builder.items
             revision += 1
         }

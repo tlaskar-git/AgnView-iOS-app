@@ -9,23 +9,41 @@ struct ConsoleView: View {
     var body: some View {
         ScreenChrome(screen: .console) {
             VStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 8) {
-                    ScreenBanners(inList: false)
-                    Text(model.statusLine)
-                        .font(.footnote)
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityIdentifier("status-line")
-                }
-                .padding(.horizontal, Theme.screenPadding)
-                .padding(.bottom, 4)
+                // The status block is a top inset of the chat: an opaque
+                // block that the chat starts below. Text that scrolls up
+                // never shows behind it, and a short fade under it hides a
+                // half-cut line at the edge.
                 ConsoleLog(agent: selection.agent)
+                    .safeAreaInset(edge: .top, spacing: 0) { statusBlock }
                 // The composer is a sibling under the chat, not an inset over
                 // it, so a tap in the field can never reach the chat's tap.
                 ConsoleComposer(selection: $selection)
             }
         }
+    }
+
+    private var statusBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ScreenBanners(inList: false)
+            Text(model.statusLine)
+                .font(.footnote)
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("status-line")
+        }
+        .padding(.horizontal, Theme.screenPadding)
+        .padding(.bottom, 6)
+        .background(Theme.chatBackground)
+        .overlay(alignment: .bottom) {
+            LinearGradient(colors: [Theme.chatBackground, Theme.chatBackground.opacity(0)],
+                           startPoint: .top, endPoint: .bottom)
+                .frame(height: 24)
+                .offset(y: 24)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+        .zIndex(1)
     }
 }
 
@@ -58,7 +76,8 @@ struct ConsoleLog: View {
                         .onDisappear { atBottom = false }
                 }
                 .padding(.horizontal, Theme.screenPadding)
-                .padding(.top, 4)
+                // Room under the status fade, so the first line is never washed out.
+                .padding(.top, 24)
                 .frame(maxWidth: 700)
                 .frame(maxWidth: .infinity)
             }
@@ -67,7 +86,7 @@ struct ConsoleLog: View {
             // does when the keyboard opens.
             .defaultScrollAnchor(.bottom)
             .simultaneousGesture(TapGesture().onEnded { Keyboard.dismiss() })
-            .onReceive(model.$consoleLines) { transcript.update($0) }
+            .onReceive(model.$consoleLines) { transcript.update($0, demo: model.isDemo) }
             // The keyboard shrinks the chat. When you were at the bottom, stay there,
             // so the newest message stays above the composer.
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
@@ -85,7 +104,7 @@ struct ConsoleLog: View {
                 if atBottom { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
             }
             .onAppear {
-                transcript.update(model.consoleLines)
+                transcript.update(model.consoleLines, demo: model.isDemo)
                 DispatchQueue.main.async { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
             }
         }

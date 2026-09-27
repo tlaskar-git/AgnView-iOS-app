@@ -137,13 +137,17 @@ class DemoUITestCase: XCTestCase {
     }
 
     /// Types a prompt and sends it. The demo answers with a built-in reply.
-    func sendPrompt(_ text: String) {
+    /// Returns the confirmation line under the composer, read at once because
+    /// the line fades after a few seconds.
+    @discardableResult
+    func sendPrompt(_ text: String) -> String {
         waitForComposer()
         let prompt = element("composer-prompt")
         prompt.tap()
         prompt.typeText(text)
         element("composer-send").tap()
         need("composer-result", timeout: 30)
+        return element("composer-result").label
     }
 
     /// True when a console row with this text exists.
