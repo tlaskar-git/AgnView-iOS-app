@@ -48,6 +48,10 @@ jobs:
           set +x
           xcrun simctl list devices available
           python3 Tools/ci/pick_screenshot_sim.py "${{ matrix.device }}" | tee -a "$GITHUB_OUTPUT"
+          case "${{ matrix.device }}" in
+            iphone) echo "display_type=APP_IPHONE_69" >> "$GITHUB_OUTPUT" ;;
+            ipad)   echo "display_type=APP_IPAD_PRO_3GEN_129" >> "$GITHUB_OUTPUT" ;;
+          esac
 
       - name: Resolve packages
         run: |
@@ -117,12 +121,24 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Arrange for App Store Connect
+        if: always()
+        env:
+          DISPLAY_TYPE: ${{ steps.sim.outputs.display_type }}
+        run: |
+          set +x
+          # appstore-connect.yml looks for a folder named after the App
+          # Store Connect display type (APP_IPHONE_69, APP_IPAD_PRO_3GEN_129)
+          # inside the downloaded artifact.
+          mkdir -p "$RUNNER_TEMP/shots-out/$DISPLAY_TYPE"
+          cp "$RUNNER_TEMP"/shots/*.png "$RUNNER_TEMP/shots-out/$DISPLAY_TYPE/" 2>/dev/null || true
+
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: appstore-screenshots-${{ matrix.device }}
-          path: ${{ runner.temp }}/shots/*.png
+          path: ${{ runner.temp }}/shots-out
           retention-days: 14
           if-no-files-found: warn
 
