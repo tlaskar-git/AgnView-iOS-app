@@ -34,6 +34,9 @@ def main():
             base = clean_name(att.get("suggestedHumanReadableName", ""))
             if not base.startswith(prefix + "-"):
                 continue
+            # Newer Xcode adds the file extension to the attachment name.
+            if base.lower().endswith(".png"):
+                base = base[:-4]
             ext = os.path.splitext(att["exportedFileName"])[1] or ".png"
             shutil.copyfile(os.path.join(src, att["exportedFileName"]), os.path.join(out, base + ext))
             copied.append(base + ext)
