@@ -134,7 +134,7 @@ struct PipelinesView: View {
         ActionRow {
             UpdatedText(date: model.jobsUpdatedAt, identifier: "pipelines-updated")
         } trailing: {
-            ActionTextButton(title: "New pipeline", systemImage: "plus",
+            ActionTextButton(title: "New Pipeline", systemImage: "plus",
                              disabled: !model.canManageJobs,
                              identifier: "pipelines-new") {
                 showNew = true
