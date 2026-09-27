@@ -64,6 +64,16 @@ struct ConsoleLog: View {
             .scrollDismissesKeyboard(.interactively)
             .simultaneousGesture(TapGesture().onEnded { Keyboard.dismiss() })
             .onReceive(model.$consoleLines) { transcript.update($0) }
+            // The keyboard shrinks the chat. When you were at the bottom, stay there,
+            // so the newest message stays above the composer.
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                guard atBottom else { return }
+                for delay in [0.05, 0.35] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                        proxy.scrollTo(Self.bottomId, anchor: .bottom)
+                    }
+                }
+            }
             .onChange(of: transcript.revision) { _, _ in
                 if atBottom { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
             }
