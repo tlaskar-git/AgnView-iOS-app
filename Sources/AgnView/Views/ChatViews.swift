@@ -227,14 +227,21 @@ final class TranscriptModel: ObservableObject {
     /// Grows with every change, so a view can react to a reply that got longer.
     @Published private(set) var revision = 0
 
+    /// When the conversation last changed. Not published: reading it never
+    /// draws the view again.
+    private(set) var lastChange = Date.distantPast
+
     private var builder = ChatBuilder()
 
-    func update(_ lines: [ConsoleLine], demo: Bool = false) {
-        if builder.sync(lines, demoClock: demo) {
-            items = builder.items
-            revision += 1
-            HubLog.event("transcript \(lines.count) lines, \(items.count) items, revision \(revision)")
-        }
+    /// Brings the conversation up to date. Returns true when it changed.
+    @discardableResult
+    func update(_ lines: [ConsoleLine], demo: Bool = false) -> Bool {
+        guard builder.sync(lines, demoClock: demo) else { return false }
+        items = builder.items
+        revision += 1
+        lastChange = Date()
+        HubLog.event("transcript \(lines.count) lines, \(items.count) items, revision \(revision)")
+        return true
     }
 }
 

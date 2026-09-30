@@ -40,27 +40,29 @@ struct ConsoleView: View {
 /// The conversation: your prompts as bubbles on the right, agent replies as
 /// plain text on the left. It follows new output while you are at the bottom,
 /// and the keyboard closes when you scroll, swipe down or tap the chat.
+///
+/// Following new output: the chat follows until the reader scrolls away from
+/// the bottom, and follows again when the reader comes back or sends a
+/// prompt. New rows never stop it. Before 1.0.7 the chat stopped following
+/// when a burst of new rows (a reply is three or four rows at once) pushed a
+/// one-point marker at the bottom off screen before the scroll caught up, and
+/// the scroll ran before the new rows were laid out. The reply then sat below
+/// the fold, so a prompt looked as if nothing came back. On iOS 18 and later
+/// the chat now scrolls when the content has grown (after layout), and only
+/// a drag or a fling by the reader can stop it following.
 struct ConsoleLog: View {
     /// The agent the composer has chosen, for the empty state.
     let agent: String
 
     @EnvironmentObject private var model: AppModel
     @StateObject private var transcript = TranscriptModel()
-    /// True while the chat follows new output. Only the reader turns it off,
-    /// by scrolling away from the bottom. New rows never turn it off: a row
-    /// pushes the bottom marker off screen before the scroll catches up, and
-    /// that must not stop the chat from following (the newest reply then
-    /// stayed below the fold and never showed).
+    /// True while the chat follows new output.
     @State private var following = true
-    /// True while the reader drags or flings the chat (iOS 18 and later).
-    @State private var readerScrolling = false
-    /// When the transcript last grew. On iOS 17, which cannot tell a drag
-    /// from a scroll caused by new rows, a marker that leaves the screen
-    /// within a second of new rows does not count as the reader scrolling.
-    @State private var lastGrowth = Date.distantPast
     @State private var pinnedForKeyboard = false
 
     private static let bottomId = "console-bottom"
+    /// How close to the bottom counts as at the bottom, in points.
+    private static let bottomSlack: CGFloat = 48
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -73,12 +75,14 @@ struct ConsoleLog: View {
                     Color.clear
                         .frame(height: 1)
                         .id(Self.bottomId)
-                        .onAppear { following = true }
+                        .onAppear { setFollowing(true, "bottom on screen") }
                         .onDisappear {
-                            if readerScrolling
-                                || (!ScrollPhaseTracker.isAvailable && Date().timeIntervalSince(lastGrowth) > 1) {
-                                following = false
-                            }
+                            // iOS 17 only: it has no scroll phase, so a marker
+                            // that leaves within a second of new rows is taken
+                            // as the rows, not the reader.
+                            guard !ChatScrollTracker.isAvailable,
+                                  Date().timeIntervalSince(transcript.lastChange) > 1 else { return }
+                            setFollowing(false, "bottom left the screen (iOS 17)")
                         }
                 }
                 .padding(.horizontal, Theme.screenPadding)
@@ -92,9 +96,23 @@ struct ConsoleLog: View {
             // Keeps the newest message in place when the chat resizes, as it
             // does when the keyboard opens.
             .defaultScrollAnchor(.bottom)
-            .modifier(ScrollPhaseTracker(readerScrolling: $readerScrolling))
+            .modifier(ChatScrollTracker(slack: Self.bottomSlack) { event in
+                switch event {
+                case .contentGrew:
+                    if following { scrollToBottom(proxy, "content grew") }
+                case .readerMoved(let atBottom):
+                    setFollowing(atBottom, atBottom ? "reader at the bottom" : "reader scrolled away")
+                case .settledAtBottom:
+                    setFollowing(true, "settled at the bottom")
+                }
+            })
             .simultaneousGesture(TapGesture().onEnded { Keyboard.dismiss() })
-            .onReceive(model.$consoleLines) { transcript.update($0, demo: model.isDemo) }
+            .onReceive(model.$consoleLines) { lines in
+                guard transcript.update(lines, demo: model.isDemo) else { return }
+                // iOS 18 and later scroll when the content size changes (see
+                // ChatScrollTracker). iOS 17 scrolls here, once per update.
+                if !ChatScrollTracker.isAvailable, following { scrollToBottom(proxy, "new rows (iOS 17)") }
+            }
             // The keyboard shrinks the chat. When you were at the bottom, stay there,
             // so the newest message stays above the composer.
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
@@ -108,17 +126,12 @@ struct ConsoleLog: View {
                     pinnedForKeyboard = false
                 }
             }
-            .onChange(of: transcript.revision) { _, _ in
-                lastGrowth = Date()
-                guard following else { return }
-                scrollToBottom(proxy)
-            }
             // Sending a prompt always brings the chat back to the bottom, so
             // the prompt and its reply are on screen.
             .onChange(of: model.dispatchState?.isLoading ?? false) { _, sending in
                 guard sending else { return }
-                following = true
-                scrollToBottom(proxy)
+                setFollowing(true, "prompt sent")
+                scrollToBottom(proxy, "prompt sent")
             }
             .onAppear {
                 transcript.update(model.consoleLines, demo: model.isDemo)
@@ -134,19 +147,35 @@ struct ConsoleLog: View {
         .accessibilityIdentifier("console-log")
     }
 
-    /// Scrolls now, and once more after the new rows are laid out: a scroll
-    /// made in the same update as the new rows can stop short of them.
-    private func scrollToBottom(_ proxy: ScrollViewProxy) {
+    private func setFollowing(_ value: Bool, _ reason: String) {
+        guard following != value else { return }
+        following = value
+        HubLog.event("console following \(value): \(reason)")
+    }
+
+    /// Scrolls now, and once more on the next turn of the main queue, after
+    /// any rows added in this update are laid out.
+    private func scrollToBottom(_ proxy: ScrollViewProxy, _ reason: String) {
+        HubLog.event("console scroll to bottom: \(reason)")
         proxy.scrollTo(Self.bottomId, anchor: .bottom)
         DispatchQueue.main.async { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
     }
 }
 
-/// Tells whether the reader is dragging or flinging a scroll view. iOS 18
-/// and later report the scroll phase. iOS 17 does not, and there the flag
-/// stays false (see ConsoleLog.lastGrowth for the fallback).
-struct ScrollPhaseTracker: ViewModifier {
-    @Binding var readerScrolling: Bool
+/// Watches a scroll view on iOS 18 and later: when its content grows, and
+/// where the reader leaves it. Does nothing on iOS 17.
+struct ChatScrollTracker: ViewModifier {
+    enum Event {
+        /// The content got taller, after layout.
+        case contentGrew
+        /// The reader dragged or flung the chat. True when it is near the bottom.
+        case readerMoved(atBottom: Bool)
+        /// The chat is at the bottom without the reader touching it.
+        case settledAtBottom
+    }
+
+    let slack: CGFloat
+    let onEvent: (Event) -> Void
 
     static var isAvailable: Bool {
         if #available(iOS 18.0, *) { return true }
@@ -155,12 +184,46 @@ struct ScrollPhaseTracker: ViewModifier {
 
     func body(content: Content) -> some View {
         if #available(iOS 18.0, *) {
-            content.onScrollPhaseChange { _, phase in
-                readerScrolling = phase == .interacting || phase == .decelerating
-            }
+            content.modifier(ChatScrollTracker18(slack: slack, onEvent: onEvent))
         } else {
             content
         }
+    }
+}
+
+@available(iOS 18.0, *)
+private struct ChatScrollTracker18: ViewModifier {
+    let slack: CGFloat
+    let onEvent: (ChatScrollTracker.Event) -> Void
+
+    @State private var readerScrolling = false
+
+    private struct Metrics: Equatable {
+        var contentHeight: CGFloat
+        /// How far the bottom of the content is below the bottom of the view.
+        var distanceToBottom: CGFloat
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .onScrollPhaseChange { _, phase in
+                readerScrolling = phase == .interacting || phase == .decelerating || phase == .tracking
+            }
+            .onScrollGeometryChange(for: Metrics.self) { geometry in
+                let visibleBottom = geometry.contentOffset.y + geometry.containerSize.height
+                let contentBottom = geometry.contentSize.height + geometry.contentInsets.bottom
+                return Metrics(contentHeight: geometry.contentSize.height,
+                               distanceToBottom: contentBottom - visibleBottom)
+            } action: { old, new in
+                let atBottom = new.distanceToBottom <= slack
+                if new.contentHeight > old.contentHeight + 0.5 {
+                    onEvent(.contentGrew)
+                } else if readerScrolling {
+                    onEvent(.readerMoved(atBottom: atBottom))
+                } else if atBottom {
+                    onEvent(.settledAtBottom)
+                }
+            }
     }
 }
 

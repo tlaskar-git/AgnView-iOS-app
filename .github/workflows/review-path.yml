@@ -39,7 +39,7 @@ jobs:
             tsan: false
           - device: ipad
             config: Debug
-            iterations: 6
+            iterations: 8
             tsan: false
           - device: iphone
             config: Release
