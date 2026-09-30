@@ -13,10 +13,6 @@ on:
         description: Runs per job
         required: false
         default: "20"
-  push:
-    branches:
-      - bot/p16-demo-review-fix
-      - bot/p16-demo-review-baseline
 
 permissions:
   contents: read
