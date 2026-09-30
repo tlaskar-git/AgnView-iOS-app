@@ -98,6 +98,7 @@ final class DemoHub: APITransport, @unchecked Sendable {
         rows.append(row)
         let target = sink
         lock.unlock()
+        HubLog.event("demo row \(row.id) agent \(agent), stream attached \(target != nil)")
         target?(.log(Self.entry(row)))
     }
 
@@ -581,7 +582,10 @@ final class DemoHubSession: HubSession {
         lock.lock()
         timeline = task
         lock.unlock()
-        stream.onTermination = { [weak self] _ in self?.stop() }
+        stream.onTermination = { [weak self] reason in
+            HubLog.event("demo stream terminated: \(String(describing: reason))")
+            self?.stop()
+        }
     }
 
     private func stop() {

@@ -38,8 +38,10 @@ while [ "$i" -le "$ITERATIONS" ]; do
   xcrun simctl bootstatus "$udid" -b > /dev/null 2>&1
   marker="$OUT/.marker-$i"
   touch "$marker"
-  xcrun simctl spawn "$udid" log stream --level debug --style compact \
-    --predicate 'process == "AgnView"' > "$OUT/logs/device-$i.log" 2>&1 &
+  # The app's own lifecycle lines, and every error or fault in its process.
+  xcrun simctl spawn "$udid" log stream --level info --style compact \
+    --predicate 'process == "AgnView" AND (subsystem == "com.example.agnview" OR messageType == error OR messageType == fault)' \
+    > "$OUT/logs/device-$i.log" 2>&1 &
   logpid=$!
 
   tsanlog=""
@@ -67,7 +69,7 @@ while [ "$i" -le "$ITERATIONS" ]; do
   done
   # Lines in the app's own log that point at a fault, a crash or a SwiftUI
   # runtime warning.
-  findings="$(grep -Eic 'fault|fatal error|precondition|unexpectedly found nil|EXC_|terminat|publishing changes from within view updates|modifying state during view update|undefined behavior' "$OUT/logs/device-$i.log" 2>/dev/null || true)"
+  findings="$(grep -Eic ' (E|F|Er|Fa) +AgnView\[|fatal error|precondition|unexpectedly found nil|publishing changes from within view updates|modifying state during view update|watchdog fired|stream terminated|stream ended' "$OUT/logs/device-$i.log" 2>/dev/null || true)"
   grep 'REVIEW-PATH:' "$OUT/logs/xcodebuild-$i.log" | sed 's/^.*REVIEW-PATH: //' > "$OUT/logs/steps-$i.txt"
 
   if [ "$rc" -eq 0 ] && [ "$crash" = "no" ]; then
@@ -79,6 +81,8 @@ while [ "$i" -le "$ITERATIONS" ]; do
     echo "---- run $i failed (exit $rc, crash $crash) ----"
     cat "$OUT/logs/steps-$i.txt"
     grep -E 'error: |failed \(' "$OUT/logs/xcodebuild-$i.log" | head -20
+    echo "-- app lifecycle (last 40 lines) --"
+    grep 'com.example.agnview' "$OUT/logs/device-$i.log" | tail -40
   fi
   echo "run $i: delay $delay landscape $land -> $result in ${seconds}s, crash $crash, log findings $findings"
   echo "| $i | $delay | $land | $result | $seconds | $crash | $findings |" >> "$SUMMARY"

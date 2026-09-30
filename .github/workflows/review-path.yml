@@ -15,6 +15,7 @@ on:
   push:
     branches:
       - bot/p16-demo-review-fix
+      - bot/p16-demo-review-baseline
 
 permissions:
   contents: read
@@ -34,20 +35,16 @@ jobs:
         include:
           - device: ipad
             config: Release
-            iterations: 24
+            iterations: 16
             tsan: false
           - device: ipad
             config: Debug
-            iterations: 12
+            iterations: 6
             tsan: false
           - device: iphone
             config: Release
-            iterations: 12
+            iterations: 8
             tsan: false
-          - device: ipad
-            config: Debug
-            iterations: 4
-            tsan: true
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -233,6 +233,7 @@ final class TranscriptModel: ObservableObject {
         if builder.sync(lines, demoClock: demo) {
             items = builder.items
             revision += 1
+            HubLog.event("transcript \(lines.count) lines, \(items.count) items, revision \(revision)")
         }
     }
 }

@@ -139,7 +139,14 @@ final class ReviewPathTests: DemoUITestCase {
         report(String(format: "canned reply %@ after %.2fs", replied ? "shown" : "MISSING", Date().timeIntervalSince(sent)))
         XCTAssertTrue(replied, "the canned reply never reached the console")
         snap("03-console-reply")
-        if !replied { keepTree("console-no-reply") }
+        if !replied {
+            keepTree("console-no-reply")
+            snap("problem-console-no-reply")
+            // Tells a reply that never came from one the chat did not scroll to.
+            for _ in 0..<4 { element("console-log").swipeUp() }
+            let afterScroll = consoleHas("Your prompt was: Hello from the review path", timeout: 5)
+            report("canned reply after scrolling by hand: \(afterScroll ? "shown" : "MISSING")")
+        }
         check("console-reply")
 
         for (name, root) in [("Sessions", "session-row"), ("Pipelines", "job-row"), ("Usage", "provider-claude"),
