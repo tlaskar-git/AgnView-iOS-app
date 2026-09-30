@@ -46,7 +46,18 @@ struct ConsoleLog: View {
 
     @EnvironmentObject private var model: AppModel
     @StateObject private var transcript = TranscriptModel()
-    @State private var atBottom = true
+    /// True while the chat follows new output. Only the reader turns it off,
+    /// by scrolling away from the bottom. New rows never turn it off: a row
+    /// pushes the bottom marker off screen before the scroll catches up, and
+    /// that must not stop the chat from following (the newest reply then
+    /// stayed below the fold and never showed).
+    @State private var following = true
+    /// True while the reader drags or flings the chat (iOS 18 and later).
+    @State private var readerScrolling = false
+    /// When the transcript last grew. On iOS 17, which cannot tell a drag
+    /// from a scroll caused by new rows, a marker that leaves the screen
+    /// within a second of new rows does not count as the reader scrolling.
+    @State private var lastGrowth = Date.distantPast
     @State private var pinnedForKeyboard = false
 
     private static let bottomId = "console-bottom"
@@ -62,8 +73,13 @@ struct ConsoleLog: View {
                     Color.clear
                         .frame(height: 1)
                         .id(Self.bottomId)
-                        .onAppear { atBottom = true }
-                        .onDisappear { atBottom = false }
+                        .onAppear { following = true }
+                        .onDisappear {
+                            if readerScrolling
+                                || (!ScrollPhaseTracker.isAvailable && Date().timeIntervalSince(lastGrowth) > 1) {
+                                following = false
+                            }
+                        }
                 }
                 .padding(.horizontal, Theme.screenPadding)
                 // A clear gap below the status block, so the topmost visible
@@ -76,12 +92,13 @@ struct ConsoleLog: View {
             // Keeps the newest message in place when the chat resizes, as it
             // does when the keyboard opens.
             .defaultScrollAnchor(.bottom)
+            .modifier(ScrollPhaseTracker(readerScrolling: $readerScrolling))
             .simultaneousGesture(TapGesture().onEnded { Keyboard.dismiss() })
             .onReceive(model.$consoleLines) { transcript.update($0, demo: model.isDemo) }
             // The keyboard shrinks the chat. When you were at the bottom, stay there,
             // so the newest message stays above the composer.
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-                pinnedForKeyboard = atBottom
+                pinnedForKeyboard = following
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
                 guard pinnedForKeyboard else { return }
@@ -92,7 +109,16 @@ struct ConsoleLog: View {
                 }
             }
             .onChange(of: transcript.revision) { _, _ in
-                if atBottom { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
+                lastGrowth = Date()
+                guard following else { return }
+                scrollToBottom(proxy)
+            }
+            // Sending a prompt always brings the chat back to the bottom, so
+            // the prompt and its reply are on screen.
+            .onChange(of: model.dispatchState?.isLoading ?? false) { _, sending in
+                guard sending else { return }
+                following = true
+                scrollToBottom(proxy)
             }
             .onAppear {
                 transcript.update(model.consoleLines, demo: model.isDemo)
@@ -106,6 +132,35 @@ struct ConsoleLog: View {
             }
         }
         .accessibilityIdentifier("console-log")
+    }
+
+    /// Scrolls now, and once more after the new rows are laid out: a scroll
+    /// made in the same update as the new rows can stop short of them.
+    private func scrollToBottom(_ proxy: ScrollViewProxy) {
+        proxy.scrollTo(Self.bottomId, anchor: .bottom)
+        DispatchQueue.main.async { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
+    }
+}
+
+/// Tells whether the reader is dragging or flinging a scroll view. iOS 18
+/// and later report the scroll phase. iOS 17 does not, and there the flag
+/// stays false (see ConsoleLog.lastGrowth for the fallback).
+struct ScrollPhaseTracker: ViewModifier {
+    @Binding var readerScrolling: Bool
+
+    static var isAvailable: Bool {
+        if #available(iOS 18.0, *) { return true }
+        return false
+    }
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.onScrollPhaseChange { _, phase in
+                readerScrolling = phase == .interacting || phase == .decelerating
+            }
+        } else {
+            content
+        }
     }
 }
 
