@@ -98,7 +98,6 @@ final class DemoHub: APITransport, @unchecked Sendable {
         rows.append(row)
         let target = sink
         lock.unlock()
-        HubLog.event("demo row \(row.id) agent \(agent), stream attached \(target != nil)")
         target?(.log(Self.entry(row)))
     }
 

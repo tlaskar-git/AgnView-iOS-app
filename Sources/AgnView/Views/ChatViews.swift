@@ -240,7 +240,6 @@ final class TranscriptModel: ObservableObject {
         items = builder.items
         revision += 1
         lastChange = Date()
-        HubLog.event("transcript \(lines.count) lines, \(items.count) items, revision \(revision)")
         return true
     }
 }

@@ -874,7 +874,6 @@ final class AppModel: ObservableObject {
         }
         derive(from: line)
         republishLines()
-        HubLog.event("ingest id \(id) agent \(line.agent), buffer \(buffer.count), published \(consoleLines.count)")
     }
 
     private func republishLines() {
