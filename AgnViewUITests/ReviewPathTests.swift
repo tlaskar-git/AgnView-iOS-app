@@ -173,6 +173,14 @@ final class ReviewPathTests: DemoUITestCase {
             check("pipeline-detail")
         }
 
+        // A reviewer can leave the app (a link opens Safari) and come back
+        // later. Before 1.0.7 a stay away of 45 s or more closed the demo
+        // stream, and replies stopped reaching the console.
+        XCUIDevice.shared.press(.home)
+        Thread.sleep(forTimeInterval: 50)
+        app.activate()
+        report("back after 50 s in the background")
+
         // Back to the console: the demo must still answer.
         open("Console")
         waitForComposer()

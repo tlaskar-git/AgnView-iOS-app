@@ -108,6 +108,26 @@ final class DemoHubTests: XCTestCase {
         XCTAssertEqual(session.capabilities, .lan)
     }
 
+    /// A session opened again goes on with the live script, and the old
+    /// session closing late never cuts off the new one.
+    func testASecondSessionGoesOnWithTheScriptAndKeepsItsStream() async throws {
+        let hub = makeHub()
+        let first = hub.makeSession(interval: 3600)
+        XCTAssertTrue(hub.appendNextLiveLine())
+        let second = hub.makeSession(interval: 3600)
+        await first.close()
+        hub.appendRow(agent: "codex", source: "agent_stdout", content: "after the old session closed", sessionId: nil)
+        XCTAssertTrue(hub.appendNextLiveLine())
+        await second.close()
+        var contents: [String] = []
+        for try await frame in second.frames {
+            if case .log(let entry) = frame { contents.append(entry.content ?? "") }
+        }
+        XCTAssertTrue(contents.contains("after the old session closed"), "the new session lost its stream")
+        XCTAssertEqual(contents.filter { $0 == DemoData.live[0].content }.count, 1, "the live script repeated")
+        XCTAssertEqual(contents.last, DemoData.live[1].content)
+    }
+
     // MARK: Dispatch
 
     func testDispatchAppendsThePromptAndACannedFakeReply() async throws {
@@ -285,6 +305,27 @@ final class DemoHubTests: XCTestCase {
         XCTAssertEqual(model.routeLabel, "Offline")
         XCTAssertEqual(store.writes, 0)
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
+        model.stop()
+    }
+
+    /// The demo has no ping watchdog: after the app stands still for two
+    /// minutes (a busy device, or the app in the background), a prompt still
+    /// gets its reply in the console. Before 1.0.7 the watchdog closed the
+    /// demo stream here and the reply never arrived.
+    @MainActor
+    func testTheDemoKeepsAnsweringAfterALongStall() async throws {
+        let clock = FakeClock()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("demo-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let model = AppModel(secrets: CountingSecretStore(), directory: directory, clock: clock)
+        model.startDemo()
+        try await waitUntil { !model.consoleLines.isEmpty }
+        clock.advance(by: .seconds(120))
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let sent = await model.send(agent: "codex", prompt: "Still there?")
+        XCTAssertTrue(sent)
+        try await waitUntil { model.consoleLines.contains { $0.content.contains("Your prompt was: Still there?") } }
         model.stop()
     }
 

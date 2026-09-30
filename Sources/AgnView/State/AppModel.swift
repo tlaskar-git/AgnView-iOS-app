@@ -663,8 +663,21 @@ final class AppModel: ObservableObject {
         pairingResult = .idle
         Task { [weak self] in await self?.refreshDemo(generation: gen) }
         runTask = Task { [weak self] in
-            let error = await self?.consume(session)
-            HubLog.event("demo stream ended, generation \(gen), error \(String(describing: error))")
+            // The demo stream is in memory, so it has no ping watchdog. A
+            // watchdog here closed the demo for good whenever the main thread
+            // or the whole app stood still for 45 s (a busy device, or the app
+            // in the background), and replies then never reached the console.
+            // Should the stream end anyway, a new one opens on the same demo
+            // hub: the lines stay, and the replay is dropped as duplicates.
+            var current = session
+            while !Task.isCancelled {
+                guard let model = self else { return }
+                let ended = await model.consume(current, watchdog: false)
+                guard !Task.isCancelled, model.generation == gen, model.isDemo else { return }
+                HubLog.event("demo stream ended (\(String(describing: ended))), opening it again")
+                current = hub.makeSession()
+                model.liveSession = current
+            }
         }
     }
 
@@ -813,18 +826,18 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Reads frames until the stream ends or fails. A silent stream ends after
-    /// 45 s. Returns the error that ended it, if any.
-    private func consume(_ session: HubSession) async -> TransportError? {
+    /// Reads frames until the stream ends or fails. With `watchdog`, a silent
+    /// stream ends after 45 s. Returns the error that ended it, if any.
+    private func consume(_ session: HubSession, watchdog useWatchdog: Bool = true) async -> TransportError? {
         let watchdog = PingWatchdog(clock: clock, onTimeout: {
             HubLog.event("watchdog fired, closing the session")
             Task { await session.close() }
         })
-        watchdog.start()
+        if useWatchdog { watchdog.start() }
         defer { watchdog.stop() }
         do {
             for try await frame in session.frames {
-                watchdog.kick()
+                if useWatchdog { watchdog.kick() }
                 if case .error(let detail) = frame {
                     return ConsoleFrame.mapError(detail: detail)
                 }
