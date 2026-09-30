@@ -1,0 +1,126 @@
+name: review-path
+
+# Repeats the App Review path many times: a new simulator for every run, the
+# app installed fresh, launch, tap Try the demo, then use every screen (see
+# AgnViewUITests/ReviewPathTests.swift). Each run keeps the app's device log
+# and any crash report. Nothing here uses a secret.
+
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: Runs per job
+        required: false
+        default: "20"
+  push:
+    branches:
+      - bot/p16-demo-review-fix
+
+permissions:
+  contents: read
+
+concurrency:
+  group: review-path-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repeat:
+    name: repeat (${{ matrix.device }}, ${{ matrix.config }}${{ matrix.tsan && ', tsan' || '' }})
+    runs-on: macos-latest
+    timeout-minutes: 170
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - device: ipad
+            config: Release
+            iterations: 24
+            tsan: false
+          - device: ipad
+            config: Debug
+            iterations: 12
+            tsan: false
+          - device: iphone
+            config: Release
+            iterations: 12
+            tsan: false
+          - device: ipad
+            config: Debug
+            iterations: 4
+            tsan: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Show the tools
+        run: |
+          set +x
+          sw_vers
+          xcodebuild -version
+          ls -1d /Applications/Xcode*.app
+          xcrun simctl list runtimes
+
+      - name: Install XcodeGen
+        run: |
+          set +x
+          brew install xcodegen
+
+      - name: Generate project
+        run: |
+          set +x
+          xcodegen generate
+
+      - name: Pick the device type and runtime
+        id: pick
+        run: |
+          set +x
+          python3 Tools/ci/review_path_device.py "${{ matrix.device }}" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Build for testing
+        env:
+          CONFIG: ${{ matrix.config }}
+          TSAN: ${{ matrix.tsan }}
+        run: |
+          set +x
+          extra=""
+          if [ "$TSAN" = "true" ]; then extra="-enableThreadSanitizer YES"; fi
+          # ENABLE_TESTABILITY lets the unit test target build in Release.
+          # The UI tests drive the app from outside and do not need it.
+          # shellcheck disable=SC2086
+          xcodebuild build-for-testing \
+            -scheme AgnView \
+            -configuration "$CONFIG" \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            $extra \
+            ARCHS=arm64 ENABLE_TESTABILITY=YES \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY="-" > "$RUNNER_TEMP/build.log" 2>&1 || {
+              tail -60 "$RUNNER_TEMP/build.log"
+              exit 1
+            }
+          tail -3 "$RUNNER_TEMP/build.log"
+          ls -1 "$RUNNER_TEMP/dd/Build/Products"
+
+      - name: Repeat the review path
+        env:
+          DEVICE: ${{ matrix.device }}
+          CONFIG: ${{ matrix.config }}
+          TSAN: ${{ matrix.tsan }}
+          DEVTYPE: ${{ steps.pick.outputs.devicetype }}
+          RUNTIME: ${{ steps.pick.outputs.runtime }}
+          DEVNAME: ${{ steps.pick.outputs.name }}
+          ITERATIONS: ${{ github.event.inputs.iterations || matrix.iterations }}
+        run: |
+          set +x
+          sh Tools/ci/review_path_repeat.sh
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: review-path-${{ matrix.device }}-${{ matrix.config }}${{ matrix.tsan && '-tsan' || '' }}
+          path: ${{ runner.temp }}/review
+          retention-days: 14
+          if-no-files-found: warn
