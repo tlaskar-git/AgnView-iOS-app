@@ -113,6 +113,14 @@ final class ReviewPathTests: DemoUITestCase {
         let banner = element("demo-banner").waitForExistence(timeout: 30)
         report(String(format: "demo banner %@ after %.2fs", banner ? "shown" : "MISSING", Date().timeIntervalSince(tapped)))
         XCTAssertTrue(banner, "the demo banner never appeared")
+        if !banner {
+            // Tells a tap that never arrived from a demo that cannot start.
+            snap("problem-demo-not-started")
+            keepTree("demo-not-started")
+            if demoButton.exists { demoButton.tap() }
+            let second = element("demo-banner").waitForExistence(timeout: 30)
+            report("demo banner after a second tap: \(second ? "shown" : "MISSING")")
+        }
         snap("02-demo-started")
         check("demo-started")
 
