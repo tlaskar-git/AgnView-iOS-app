@@ -27,4 +27,12 @@ enum HubLog {
     static func listFailure(_ type: Any.Type) {
         logger.debug("list not readable for \(String(describing: type), privacy: .public)")
     }
+
+    private static let lifecycle = Logger(subsystem: "com.example.agnview", category: "lifecycle")
+
+    /// One line about the connection or demo lifecycle: never hub data,
+    /// never a prompt, only what happened and a counter.
+    static func event(_ text: String) {
+        lifecycle.info("\(text, privacy: .public)")
+    }
 }

@@ -54,6 +54,9 @@ final class DemoHub: APITransport, @unchecked Sendable {
     private var refreshedAt: Date?
     private var nextJobNumber = 1
     private var sink: ((ConsoleFrame) -> Void)?
+    private var sinkOwner: UUID?
+    /// The next line of DemoData.live to add.
+    private var nextLive = 0
 
     /// `replyDelay` is the pause before the canned reply to a prompt. Zero
     /// answers at once, which the tests use.
@@ -76,18 +79,40 @@ final class DemoHub: APITransport, @unchecked Sendable {
         DemoHubSession(hub: self, interval: interval)
     }
 
-    /// Sends every line so far to `sink`, then every new line. One sink at a time.
-    func attach(sink: @escaping (ConsoleFrame) -> Void) {
+    /// Sends every line so far to `sink`, then every new line. One sink at a
+    /// time: a new one replaces the old one. `owner` names the session.
+    func attach(owner: UUID = UUID(), sink: @escaping (ConsoleFrame) -> Void) {
         lock.lock()
         for row in rows { sink(.log(Self.entry(row))) }
         self.sink = sink
+        sinkOwner = owner
         lock.unlock()
     }
 
-    func detach() {
+    /// Removes the sink, but only the one `owner` attached, so a session
+    /// that ends late never cuts off the session that replaced it.
+    func detach(owner: UUID? = nil) {
         lock.lock()
-        sink = nil
+        if owner == nil || owner == sinkOwner {
+            sink = nil
+            sinkOwner = nil
+        }
         lock.unlock()
+    }
+
+    /// Adds the next line of the live script. Returns false when the script
+    /// has no more lines.
+    func appendNextLiveLine() -> Bool {
+        lock.lock()
+        guard nextLive < DemoData.live.count else {
+            lock.unlock()
+            return false
+        }
+        let line = DemoData.live[nextLive]
+        nextLive += 1
+        lock.unlock()
+        appendRow(agent: line.agent, source: line.source, content: line.content, sessionId: line.session)
+        return true
     }
 
     /// Adds one line to the console and sends it to the attached session.
@@ -551,6 +576,8 @@ final class DemoHubSession: HubSession {
     private let continuation: AsyncThrowingStream<ConsoleFrame, Error>.Continuation
     private let lock = NSLock()
     private var timeline: Task<Void, Never>?
+    /// Names this session's sink on the hub.
+    private let token = UUID()
 
     init(hub: DemoHub, interval: TimeInterval) {
         var captured: AsyncThrowingStream<ConsoleFrame, Error>.Continuation!
@@ -561,27 +588,28 @@ final class DemoHubSession: HubSession {
         let stream = captured!
         stream.yield(.hello(ConsoleFrame.Hello(app: "AgnView Demo", protocolVersion: 1, hostname: nil,
                                                transport: "lan", capabilities: ["console", "api", "uploads"])))
-        hub.attach { stream.yield($0) }
+        let owner = token
+        hub.attach(owner: owner) { stream.yield($0) }
         let nanoseconds = UInt64(max(interval, 0.001) * 1_000_000_000)
         let task = Task { [weak hub] in
-            var next = 0
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: nanoseconds)
                 if Task.isCancelled { break }
-                if next < DemoData.live.count {
-                    let line = DemoData.live[next]
-                    next += 1
-                    hub?.appendRow(agent: line.agent, source: line.source, content: line.content,
-                                   sessionId: line.session)
-                } else {
-                    stream.yield(.ping(transport: nil))
+                // The script lives on the hub, so a session opened again
+                // goes on where the last one stopped instead of repeating it.
+                if let hub, hub.appendNextLiveLine() {
+                    continue
                 }
+                stream.yield(.ping(transport: nil))
             }
         }
         lock.lock()
         timeline = task
         lock.unlock()
-        stream.onTermination = { [weak self] _ in self?.stop() }
+        stream.onTermination = { [weak self] reason in
+            HubLog.event("demo stream terminated: \(String(describing: reason))")
+            self?.stop()
+        }
     }
 
     private func stop() {
@@ -590,7 +618,7 @@ final class DemoHubSession: HubSession {
         timeline = nil
         lock.unlock()
         task?.cancel()
-        hub.detach()
+        hub.detach(owner: token)
     }
 
     func close() async {

@@ -153,7 +153,9 @@ class DemoUITestCase: XCTestCase {
         prompt.typeText(text)
         element("composer-send").tap()
         need("composer-result", timeout: 30)
-        return element("composer-result").label
+        // The line fades after four seconds. A snapshot does not hard-fail
+        // when it is already gone on a slow runner.
+        return (try? element("composer-result").snapshot())?.label ?? ""
     }
 
     /// True when a console row with this text exists. 40s: generous headroom
