@@ -16,7 +16,7 @@ concurrency:
 jobs:
   hub-contract:
     name: hub-contract (${{ matrix.label }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 15
     continue-on-error: ${{ matrix.allow_fail }}
     strategy:

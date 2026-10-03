@@ -17,7 +17,7 @@ concurrency:
 jobs:
   e2e-lan:
     name: e2e-lan (real hub)
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS, ARM64, mac-mini]
     timeout-minutes: 60
     steps:
       - name: Checkout app repository

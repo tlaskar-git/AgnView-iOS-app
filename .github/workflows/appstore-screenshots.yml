@@ -20,7 +20,7 @@ jobs:
   capture:
     name: capture (${{ matrix.device }})
     if: github.event_name == 'workflow_dispatch' || github.head_ref == 'bot/p10-app-store-ready'
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS, ARM64, mac-mini]
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -152,7 +152,7 @@ jobs:
     name: collect
     needs: capture
     if: needs.capture.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 10
     steps:
       - name: Merge the device artifacts

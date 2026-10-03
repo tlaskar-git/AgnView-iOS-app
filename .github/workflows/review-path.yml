@@ -24,7 +24,7 @@ concurrency:
 jobs:
   repeat:
     name: repeat (${{ matrix.device }}, ${{ matrix.config }}${{ matrix.tsan && ', tsan' || '' }})
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS, ARM64, mac-mini]
     timeout-minutes: 170
     strategy:
       fail-fast: false

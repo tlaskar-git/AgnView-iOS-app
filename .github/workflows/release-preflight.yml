@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   preflight:
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS, ARM64, mac-mini]
     environment: release
     timeout-minutes: 60
     env:

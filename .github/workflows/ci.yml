@@ -14,7 +14,7 @@ concurrency:
 jobs:
   tools-test:
     name: tools-test
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS, ARM64, mac-mini]
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -31,7 +31,7 @@ jobs:
 
   build-test:
     name: build-test (${{ matrix.device }})
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS, ARM64, mac-mini]
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -210,7 +210,7 @@ jobs:
 
   iroh-loopback:
     name: iroh-loopback (optional)
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS, ARM64, mac-mini]
     timeout-minutes: 40
     continue-on-error: true
     steps:
